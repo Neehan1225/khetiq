@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlalchemy
+asyncpg
+alembic
+psycopg2-binary
+python-dotenv
+httpx
+google-genai
+pydantic
+pydantic-settings
+python-jose
+passlib
