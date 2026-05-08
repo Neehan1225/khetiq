@@ -10,6 +10,7 @@ class Buyer(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), nullable=False)
     type = Column(String(30), nullable=False)
+    gstin = Column(String(15), nullable=True)
     phone = Column(String(15), nullable=False)
     location_lat = Column(Float, nullable=False)
     location_lng = Column(Float, nullable=False)

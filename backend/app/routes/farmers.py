@@ -1,6 +1,7 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from app.database import get_db
 from app.models.farmer import Farmer
 from pydantic import BaseModel
@@ -18,13 +19,29 @@ class FarmerCreate(BaseModel):
     state: str = "Karnataka"
     language: str = "kn"
 
+
+@router.get("/check-phone")
+async def check_farmer_phone(number: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Farmer).where(Farmer.phone == number))
+    exists = result.scalar_one_or_none() is not None
+    return {"exists": exists}
+
+
 @router.post("/")
 async def create_farmer(farmer: FarmerCreate, db: AsyncSession = Depends(get_db)):
-    db_farmer = Farmer(**farmer.model_dump())
-    db.add(db_farmer)
-    await db.commit()
-    await db.refresh(db_farmer)
-    return db_farmer
+    # Check for duplicate phone first
+    existing = await db.execute(select(Farmer).where(Farmer.phone == farmer.phone))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Phone number already registered as farmer")
+    try:
+        db_farmer = Farmer(**farmer.model_dump())
+        db.add(db_farmer)
+        await db.commit()
+        await db.refresh(db_farmer)
+        return db_farmer
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Phone number already registered")
 
 @router.get("/")
 async def get_farmers(db: AsyncSession = Depends(get_db)):

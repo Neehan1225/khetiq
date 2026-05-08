@@ -12,6 +12,7 @@ class Farmer(Base):
     phone = Column(String(15), unique=True, nullable=False)
     location_lat = Column(Float, nullable=False)
     location_lng = Column(Float, nullable=False)
+    village = Column(String(100), nullable=True)
     district = Column(String(50), nullable=False)
     state = Column(String(50), default="Karnataka")
     language = Column(String(10), default="kn")

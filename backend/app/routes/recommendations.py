@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/analyze/{crop_id}")
-async def analyze_crop(crop_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def analyze_crop(crop_id: uuid.UUID, lang: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """
     Main KhetIQ endpoint. Takes a crop ID, runs the full
     resilience agent, returns AI recommendation.
@@ -40,8 +40,11 @@ async def analyze_crop(crop_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     if not buyers:
         raise HTTPException(status_code=400, detail="No buyers in system")
 
+    # Use provided language or fall back to farmer preference
+    target_lang = lang or farmer.language
+
     # Run the AI agent
-    result = await run_resilience_agent(farmer, crop, buyers)
+    result = await run_resilience_agent(farmer, crop, buyers, target_lang)
 
     # Save recommendation to database
     best_buyer_id = None
