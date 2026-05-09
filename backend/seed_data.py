@@ -13,6 +13,7 @@ from app.models.buyer import Buyer
 from app.models.crop import Crop
 from app.models.deal import Deal
 from app.models.review import Review
+from app.models.recommendations import Recommendation
 
 # Reference Data
 CROP_DATA = {
@@ -92,6 +93,7 @@ def get_gstin():
 async def clear_data(session: AsyncSession):
     await session.execute(delete(Review))
     await session.execute(delete(Deal))
+    await session.execute(delete(Recommendation))
     await session.execute(delete(Crop))
     await session.execute(delete(Buyer))
     await session.execute(delete(Farmer))

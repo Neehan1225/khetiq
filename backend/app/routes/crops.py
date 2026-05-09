@@ -65,3 +65,8 @@ async def get_all_crops(db: AsyncSession = Depends(get_db)):
         }
         all_crops.append(c_dict)
     return all_crops
+
+@router.get("/types", response_model=List[str])
+async def get_crop_types(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Crop.crop_type).distinct())
+    return result.scalars().all()

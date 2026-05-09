@@ -15,4 +15,6 @@ class Review(Base):
     reviewee_id = Column(UUID(as_uuid=True), nullable=False)
     rating = Column(Integer, nullable=False)
     comment = Column(String(500), nullable=True)
+    review_type = Column(String(20), nullable=True) # 'verified' or 'feedback'
+    reason = Column(String(50), nullable=True) # for feedback reviews
     created_at = Column(DateTime(timezone=True), server_default=func.now())

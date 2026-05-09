@@ -1,5 +1,5 @@
 from app.services.gemini_service import get_profit_recommendation
-from app.services.weather_service import get_weather_summary
+from app.services.weather_service import get_weather_data
 from app.services.maps_service import get_distance_and_cost
 from app.services.apmc_service import get_apmc_price
 from app.services.amed_service import get_field_data
@@ -8,11 +8,13 @@ from app.services.amed_service import get_field_data
 async def run_resilience_agent(farmer, crop, buyers, lang=None):
     """
     Core KhetIQ agent. Takes farmer, crop, and nearby buyers.
-    Returns full AI recommendation with resilience index.
+    Returns full AI recommendation with resilience index + weather days + buyer coords.
     """
 
-    # Step 1: Get real weather for farmer's location
-    weather = await get_weather_summary(farmer.location_lat, farmer.location_lng)
+    # Step 1: Get real weather for farmer's location (structured + summary)
+    weather_data = await get_weather_data(farmer.location_lat, farmer.location_lng)
+    weather = weather_data["summary"]
+    weather_days = weather_data["days"]
 
     # Step 2: Get real APMC mandi price
     apmc_price = get_apmc_price(crop.crop_type)
@@ -40,6 +42,8 @@ async def run_resilience_agent(farmer, crop, buyers, lang=None):
             "transport_cost": transport_data["transport_cost"],
             "net_profit": net_profit,
             "buyer_id": str(buyer.id),
+            "location_lat": buyer.location_lat,
+            "location_lng": buyer.location_lng,
         })
 
     # Step 5: Send everything to Gemini for reasoning
@@ -60,7 +64,6 @@ async def run_resilience_agent(farmer, crop, buyers, lang=None):
 
     # Step 6: Build final response
     best_idx = ai_result.get("best_buyer_index", 0)
-    # Guard: ensure index is valid
     if not enriched_buyers:
         best_buyer = None
     elif best_idx < 0 or best_idx >= len(enriched_buyers):
@@ -71,10 +74,13 @@ async def run_resilience_agent(farmer, crop, buyers, lang=None):
 
     return {
         "farmer": farmer.name,
+        "farmer_lat": farmer.location_lat,
+        "farmer_lng": farmer.location_lng,
         "crop": crop.crop_type,
         "quantity_kg": crop.quantity_kg,
         "apmc_price_per_kg": apmc_price,
         "weather": weather,
+        "weather_days": weather_days,
         "field_data": field_data,
         "resilience_index": ai_result.get("resilience_index", 0),
         "risk_level": ai_result.get("risk_level", "medium"),

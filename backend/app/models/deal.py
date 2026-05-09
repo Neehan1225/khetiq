@@ -18,6 +18,9 @@ class Deal(Base):
     transport_cost = Column(Float, default=0.0)
     total_value = Column(Float, default=0.0)
     expected_delivery_date = Column(Date, nullable=True)
+    proposed_delivery_date = Column(Date, nullable=True)
+    proposed_time_slot = Column(String(20), nullable=True)  # morning | afternoon | evening
+    delivery_notes = Column(String(100), nullable=True)
     payment_status = Column(String(20), default="pending")
     deal_status = Column(String(20), default="offer")     # offer|accepted|rejected|bargaining|locked|completed
     initiated_by = Column(String(10), default="buyer")    # buyer|farmer

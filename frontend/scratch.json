@@ -1,0 +1,254 @@
+[
+  {
+    "line": 61,
+    "text": "/* \u2500\u2500 Deal Lock Overlay Animations \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */"
+  },
+  {
+    "line": 155,
+    "text": "alert(\"Microphone access is blocked. Please allow microphone access in your browser settings and reload.\");"
+  },
+  {
+    "line": 194,
+    "text": "function Spinner() { return <span className=\"spin\" style={{ display: \"inline-block\", width: 16, height: 16, border: \"2px solid rgba(255,255,255,0.2)\", borderTopColor: \"#fff\", borderRadius: \"50%\" }} />; }"
+  },
+  {
+    "line": 196,
+    "text": "function LockedBadge() { return <span style={{ background: \"rgba(34,197,94,0.12)\", border: \"1px solid rgba(34,197,94,0.4)\", color: \"#4ade80\", padding: \"4px 14px\", borderRadius: 20, fontSize: 12, fontWeight: 800, letterSpacing: \"1.2px\", whiteSpace: \"nowrap\", textTransform: \"uppercase\", boxShadow: \"0 0 12px rgba(34,197,94,0.15)\", display: \"inline-flex\", alignItems: \"center\", gap: 5 }}>\ud83d\udd12 LOCKED</span>; }"
+  },
+  {
+    "line": 198,
+    "text": "function Label({ children }) { return <label style={{ display: \"block\", color: \"#64748b\", fontSize: 11, fontWeight: 700, letterSpacing: \"0.8px\", textTransform: \"uppercase\", marginBottom: 8 }}>{children}</label>; }"
+  },
+  {
+    "line": 547,
+    "text": "return `\ud83e\udd1d Negotiation Tips for ${crop}:\\n\u2022 Current APMC rate: \u20b9${price}/kg\\n\u2022 Target asking price: \u20b9${targetPrice}/kg (+10%)\\n\u2022 Your leverage: ${qty} kg is ${qty > 500 ? \"a bulk order \u2014 buyers prefer this\" : \"a smaller lot \u2014 consider pooling with nearby farmers\"}\\n\u2022 Resilience ${resilience_index}/100 means ${resilience_index >= 70 ? \"strong position\" : \"weaker position \u2014 accept fair offers quickly\"}.`;"
+  },
+  {
+    "line": 802,
+    "text": "{ icon: \"\ud83e\udd1d\", title: \"Fair Deal Negotiation\", sub: \"Bargain, lock, and track every deal transparently.\", detail: \"Counter-offer, accept, reject \u2014 full bargaining with deal history timeline.\", color: \"#818cf8\" }"
+  },
+  {
+    "line": 818,
+    "text": "\"1\ufe0f\u20e3 Register with GPS\", \"2\ufe0f\u20e3 Add Your Crop\", \"3\ufe0f\u20e3 Get AI Analysis\", \"4\ufe0f\u20e3 Lock Best Deal\""
+  },
+  {
+    "line": 859,
+    "text": "// \u2500\u2500 Deal Lock Overlay \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+  },
+  {
+    "line": 861,
+    "text": "function DealLockOverlay({ data, onDismiss }) {"
+  },
+  {
+    "line": 1041,
+    "text": "{/* \u2500\u2500 Stage 3: Deal Locked! \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */}"
+  },
+  {
+    "line": 1090,
+    "text": "{/* Deal Locked Text */}"
+  },
+  {
+    "line": 1097,
+    "text": "}}>Deal Locked! \u2705</div>"
+  },
+  {
+    "line": 1175,
+    "text": "const [dealLockOverlay, setDealLockOverlay] = useState(null);"
+  },
+  {
+    "line": 1242,
+    "text": "const lockDeal = async () => {"
+  },
+  {
+    "line": 1254,
+    "text": "// Trigger the Deal Lock overlay animation"
+  },
+  {
+    "line": 1255,
+    "text": "setDealLockOverlay({"
+  },
+  {
+    "line": 1278,
+    "text": "if (status === \"accepted\") {"
+  },
+  {
+    "line": 1279,
+    "text": "await api.patch(`${API}/deals/${dealId}/accept`);"
+  },
+  {
+    "line": 1287,
+    "text": "toast(status === \"accepted\" ? \"Deal accepted! \ud83c\udf89\" : status === \"rejected\" ? \"Deal rejected.\" : \"Counter-offer sent!\");"
+  },
+  {
+    "line": 1326,
+    "text": "{dealLockOverlay && ("
+  },
+  {
+    "line": 1327,
+    "text": "<DealLockOverlay"
+  },
+  {
+    "line": 1328,
+    "text": "data={dealLockOverlay}"
+  },
+  {
+    "line": 1330,
+    "text": "setDealLockOverlay(null);"
+  },
+  {
+    "line": 1331,
+    "text": "toast(\"Deal locked! Track it in My Deals.\");"
+  },
+  {
+    "line": 1339,
+    "text": "{page === \"analysis\" && recommendation && <FAnalysis rec={recommendation} onBack={() => setPage(\"dashboard\")} onLockDeal={lockDeal} farmerLang={farmer?.language || \"kn\"} />}"
+  },
+  {
+    "line": 1542,
+    "text": "function FAnalysis({ rec, onBack, onLockDeal, farmerLang }) {"
+  },
+  {
+    "line": 1551,
+    "text": "<Btn onClick={onLockDeal}>Lock Deal with Best Buyer</Btn>"
+  },
+  {
+    "line": 1726,
+    "text": "{ label: \"Final Status\", status: [\"accepted\", \"rejected\", \"locked\"].includes(deal.deal_status) ? \"done\" : \"pending\" },"
+  },
+  {
+    "line": 1728,
+    "text": "const statusLabel = deal.deal_status === \"accepted\" || deal.deal_status === \"locked\" ? \"ACCEPTED\" : deal.deal_status === \"rejected\" ? \"REJECTED\" : deal.deal_status === \"bargaining\" ? \"NEGOTIATING\" : \"PENDING\";"
+  },
+  {
+    "line": 1729,
+    "text": "const statusClr = deal.deal_status === \"accepted\" || deal.deal_status === \"locked\" ? \"#4ade80\" : deal.deal_status === \"rejected\" ? \"#f87171\" : deal.deal_status === \"bargaining\" ? \"#fbbf24\" : \"#64748b\";"
+  },
+  {
+    "line": 1792,
+    "text": "const [optimistic, setOptimistic] = useState({}); // {dealId: \"accepted\"|\"rejected\"|\"bargaining\"}"
+  },
+  {
+    "line": 1800,
+    "text": "if (el) el.scrollIntoView({ behavior: \"smooth\", block: \"center\" });"
+  },
+  {
+    "line": 1840,
+    "text": "const closedDeals = deals.filter(d => [\"accepted\", \"rejected\", \"locked\", \"cancelled\", \"failed\", \"completed\"].includes(d.deal_status));"
+  },
+  {
+    "line": 1848,
+    "text": "const isLate = (ds === \"accepted\" || ds === \"locked\") && d.expected_delivery_date && new Date(d.expected_delivery_date) < new Date(Date.now() - 2 * 86400000);"
+  },
+  {
+    "line": 1849,
+    "text": "const effectiveStatus = ds === \"failed\" ? \"FAILED\" : ds === \"cancelled\" ? \"CANCELLED\" : ds === \"completed\" ? \"COMPLETED\" : isLate ? \"LATE\" : (ds === \"accepted\" || ds === \"locked\") ? \"PENDING\" : ds === \"rejected\" ? \"REJECTED\" : ds === \"bargaining\" ? \"NEGOTIATING\" : \"PENDING\";"
+  },
+  {
+    "line": 1855,
+    "text": "(ds === \"accepted\" || ds === \"locked\" || ds === \"bargaining\") ? \"linear-gradient(90deg,#d97706,#b45309)\" :"
+  },
+  {
+    "line": 1909,
+    "text": "<Btn variant=\"green\" onClick={() => handleRespond(d.id, \"accepted\", null)} style={{ padding: \"9px 20px\", fontSize: 13 }}>\u2713 Accept Offer</Btn>"
+  },
+  {
+    "line": 1918,
+    "text": "{(ds === \"accepted\" || ds === \"locked\" || ds === \"completed\" || ds === \"failed\") && ("
+  },
+  {
+    "line": 1942,
+    "text": "This offer is no longer available because you accepted another offer for this crop."
+  },
+  {
+    "line": 1949,
+    "text": "<Btn variant=\"green\" onClick={() => handleRespond(d.id, \"accepted\", null)} style={{ padding: \"9px 20px\", fontSize: 13 }}>\u2713 Accept \u20b9{d.counter_price_per_kg}/kg</Btn>"
+  },
+  {
+    "line": 2102,
+    "text": "const acceptCounter = async (dealId, counterPrice) => {"
+  },
+  {
+    "line": 2104,
+    "text": "await api.patch(`${API}/deals/${dealId}/accept`);"
+  },
+  {
+    "line": 2105,
+    "text": "toast(\"Deal accepted! \ud83c\udf89\");"
+  },
+  {
+    "line": 2108,
+    "text": "} catch { toast(\"Failed to accept deal\", \"error\"); }"
+  },
+  {
+    "line": 2157,
+    "text": "{page === \"deals\" && <BDeals deals={deals} farmers={farmers} onBack={() => setPage(\"market\")} onAcceptCounter={acceptCounter} onCounterOffer={counterOffer} onRejectDeal={rejectDeal} buyerId={buyer.id} onReviewOpen={setReviewModal} highlightDealId={highlightDealId} />}"
+  },
+  {
+    "line": 2472,
+    "text": "{summary.total_farmers} farmers \u2022 {summary.total_buyers} buyers \u2022 {summary.total_deals} deals ({summary.total_accepted} accepted)"
+  },
+  {
+    "line": 2495,
+    "text": "[\"Accepted\", \"\u2705\", summary.total_accepted, \"#4ade80\"],"
+  },
+  {
+    "line": 2714,
+    "text": "function BDeals({ deals, farmers, onBack, onAcceptCounter, onCounterOffer, onRejectDeal, buyerId, onProfileOpen, onReviewOpen, highlightDealId }) {"
+  },
+  {
+    "line": 2725,
+    "text": "if (el) el.scrollIntoView({ behavior: \"smooth\", block: \"center\" });"
+  },
+  {
+    "line": 2749,
+    "text": "const statusColor = (s) => s === \"accepted\" ? \"#4ade80\" : s === \"rejected\" ? \"#f87171\" : s === \"bargaining\" ? \"#fb923c\" : s === \"locked\" ? \"#4ade80\" : \"#64748b\";"
+  },
+  {
+    "line": 2751,
+    "text": "const statusLabel = (s) => s === \"accepted\" || s === \"locked\" ? \"ACCEPTED\" : s === \"rejected\" ? \"REJECTED\" : s === \"bargaining\" ? \"NEGOTIATING\" : \"PENDING\";"
+  },
+  {
+    "line": 2756,
+    "text": "const handleAccept = (dealId, counterPrice) => {"
+  },
+  {
+    "line": 2757,
+    "text": "setOptimistic(p => ({ ...p, [dealId]: \"accepted\" }));"
+  },
+  {
+    "line": 2758,
+    "text": "onAcceptCounter(dealId, counterPrice);"
+  },
+  {
+    "line": 2782,
+    "text": "const isLate = (ds === \"accepted\" || ds === \"locked\") && d.expected_delivery_date && new Date(d.expected_delivery_date) < new Date(Date.now() - 2 * 86400000);"
+  },
+  {
+    "line": 2783,
+    "text": "const effectiveStatus = ds === \"failed\" ? \"FAILED\" : ds === \"cancelled\" ? \"CANCELLED\" : ds === \"completed\" ? \"COMPLETED\" : isLate ? \"LATE\" : (ds === \"accepted\" || ds === \"locked\") ? \"PENDING\" : ds === \"rejected\" ? \"REJECTED\" : ds === \"bargaining\" ? \"NEGOTIATING\" : \"PENDING\";"
+  },
+  {
+    "line": 2789,
+    "text": "(ds === \"accepted\" || ds === \"locked\" || ds === \"bargaining\") ? \"linear-gradient(90deg,#d97706,#ea580c)\" :"
+  },
+  {
+    "line": 2829,
+    "text": "{(ds === \"accepted\" || ds === \"locked\" || ds === \"completed\" || ds === \"failed\") && ("
+  },
+  {
+    "line": 2856,
+    "text": "{/* Buyer: accept farmer's counter-offer */}"
+  },
+  {
+    "line": 2859,
+    "text": "<Btn variant=\"green\" onClick={() => handleAccept(d.id, d.counter_price_per_kg)} style={{ padding: \"9px 20px\", fontSize: 13 }}>"
+  },
+  {
+    "line": 2860,
+    "text": "\u2713 Accept \u20b9{d.counter_price_per_kg}/kg"
+  },
+  {
+    "line": 2881,
+    "text": "<Btn variant=\"green\" onClick={() => handleAccept(d.id, d.agreed_price_per_kg)} style={{ padding: \"9px 20px\", fontSize: 13 }}>\u2713 Accept Offer</Btn>"
+  }
+]

@@ -2,6 +2,7 @@ import os
 import json
 import re
 from google import genai
+from app.config import settings
 
 LANG_NAMES = {
     "kn": "Kannada",
@@ -29,7 +30,7 @@ async def get_profit_recommendation(
     lang_name = LANG_NAMES.get(language, "Kannada")
 
     try:
-        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        client = genai.Client(api_key=settings.gemini_api_key)
 
         buyers_summary = json.dumps(
             [{"index": i, "name": b["name"], "district": b["district"],
@@ -126,3 +127,154 @@ def _fallback(buyers, weather_summary, apmc_price, lang_name="Kannada"):
         "reasoning_local": reasoning,
         "price_tip": tip,
     }
+
+
+async def get_copilot_response(
+    user_type: str,
+    user_name: str,
+    language: str,
+    context: dict,
+    message: str,
+    apmc_prices: dict = None,
+) -> dict:
+    """
+    KhetIQ AI Copilot — conversational advisor for farmers and buyers.
+    Returns response text + 3 quick-reply suggestions in the farmer's language.
+    """
+    lang_name = LANG_NAMES.get(language, "Kannada")
+    apmc_prices = apmc_prices or {}
+
+    recent_deals_str = ""
+    if context.get("recent_deals"):
+        recent_deals_str = "Recent deals: " + "; ".join(
+            f"{d['crop']} ₹{d['price']}/kg {d['qty']}kg [{d['status']}]"
+            for d in context["recent_deals"][:3]
+        )
+
+    crop_ctx = ""
+    if context.get("crop_type"):
+        apmc = apmc_prices.get(context["crop_type"].lower(), "unknown")
+        crop_ctx = f"Current crop: {context['crop_type']}, quantity: {context.get('quantity_kg','?')}kg, APMC rate: ₹{apmc}/kg"
+
+    role = "farmer selling crops" if user_type == "farmer" else "agricultural buyer sourcing crops"
+
+    prompt = f"""You are KhetIQ Copilot, an expert AI advisor for Indian agriculture.
+You are helping {user_name}, a {role} in Karnataka.
+{crop_ctx}
+{recent_deals_str}
+
+The user asks (in their words): "{message}"
+
+Respond in {lang_name} language with practical, concise advice (2-3 sentences max).
+Then provide EXACTLY 3 short follow-up questions the user might want to ask next (in {lang_name}, max 8 words each).
+
+Return ONLY valid JSON (no markdown fences):
+{{
+  "response": "<your advice in {lang_name}>",
+  "suggestions": ["<question 1>", "<question 2>", "<question 3>"]
+}}"""
+
+    try:
+        copilot_key = settings.copilot_api_key or settings.gemini_api_key
+        if not copilot_key or "your_gemini_api_key" in copilot_key:
+            raise ValueError("Invalid API key. Please set COPILOT_API_KEY in .env")
+
+        client = genai.Client(api_key=copilot_key)
+        resp = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=prompt
+        )
+        if not resp or not resp.text:
+            raise ValueError("Empty response from Gemini")
+        text = resp.text.strip()
+        text = re.sub(r"```(?:json)?", "", text).strip().rstrip("`")
+        data = json.loads(text)
+        return {
+            "response": data.get("response", ""),
+            "suggestions": data.get("suggestions", [])[:3],
+        }
+    except Exception as e:
+        print(f"Copilot error: {e}")
+        if language == "kn":
+            fallback = "ನಾನು ಈಗ ಉತ್ತರಿಸಲು ಸಾಧ್ಯವಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ."
+            sugg = ["ಈ ಬೆಲೆ ಸರಿಯಾಗಿದೆಯೇ?", "ಯಾವ ಬೆಳೆ ಉತ್ತಮ?", "ಸಾರಿಗೆ ವೆಚ್ಚ ಎಷ್ಟು?"]
+        elif language == "hi":
+            fallback = "अभी उत्तर नहीं दे सकता। कृपया फिर से प्रयास करें।"
+            sugg = ["क्या यह दाम सही है?", "कौन सी फसल बेहतर?", "ट्रांसपोर्ट लागत कितनी?"]
+        else:
+            fallback = "I'm unable to respond right now. Please try again."
+            sugg = ["Is this price fair?", "Which crop is best now?", "What is transport cost?"]
+        return {"response": fallback, "suggestions": sugg}
+
+
+async def get_copilot_voice_response(
+    user_type: str,
+    language: str,
+    audio_bytes: bytes,
+    context: dict,
+    apmc_prices: dict
+):
+    """Processes audio and returns an AI response in JSON format."""
+    lang_name = LANG_NAMES.get(language, "English")
+    role = "farmer selling crops" if user_type == "farmer" else "agricultural buyer sourcing crops"
+    
+    prompt = f"""You are KhetIQ Copilot, an expert AI advisor for Indian agriculture.
+You are helping a {role} in Karnataka.
+
+The user has sent a voice message.
+1. Transcribe the voice message.
+2. Based on the transcription, provide practical advice in {lang_name} (2-3 sentences max).
+3. Provide 3 short follow-up questions in {lang_name}.
+
+Return ONLY valid JSON:
+{{
+  "transcription": "<what the user said>",
+  "response": "<your advice in {lang_name}>",
+  "suggestions": ["<q1>", "<q2>", "<q3>"]
+}}"""
+
+    try:
+        copilot_key = settings.copilot_api_key or settings.gemini_api_key
+        client = genai.Client(api_key=copilot_key)
+        resp = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=[
+                prompt,
+                genai.types.Part.from_bytes(data=audio_bytes, mime_type="audio/webm")
+            ]
+        )
+        if not resp or not resp.text:
+            raise ValueError("Empty response from Gemini")
+            
+        text = resp.text.strip()
+        text = re.sub(r"```(?:json)?", "", text).strip().rstrip("`")
+        data = json.loads(text)
+        return data
+    except Exception as e:
+        print(f"Voice Copilot error: {e}")
+        return {
+            "transcription": "Unable to transcribe audio.",
+            "response": "I'm unable to process your voice message right now. Please try typing your question.",
+            "suggestions": ["Is this price fair?", "Which crop is best now?", "What is transport cost?"]
+        }
+
+
+async def transcribe_audio_with_gemini(audio_bytes: bytes, language: str):
+    """Transcribes short audio clips to text."""
+    lang_name = LANG_NAMES.get(language, "English")
+    prompt = f"Transcribe this voice message exactly as spoken in {lang_name}. If it's a number, return it as digits. Return ONLY the transcribed text."
+
+    try:
+        copilot_key = settings.copilot_api_key or settings.gemini_api_key
+        client = genai.Client(api_key=copilot_key)
+        resp = client.models.generate_content(
+            model="gemini-2.0-flash-lite",
+            contents=[
+                prompt,
+                genai.types.Part.from_bytes(data=audio_bytes, mime_type="audio/webm")
+            ]
+        )
+        return resp.text.strip() if resp.text else ""
+    except Exception as e:
+        print(f"Transcription error: {e}")
+        return ""

@@ -2,11 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
 from app.routes import farmers, crops, buyers, deals, recommendations, analytics, reviews
+from app.routes import notifications, ai_copilot
 
 app = FastAPI(
     title="KhetIQ API",
     description="AI-Driven Supply Chain & Resilience Co-pilot for Farmers",
-    version="1.0.0"
+    version="2.0.0"
 )
 
 app.add_middleware(
@@ -23,8 +24,8 @@ app.include_router(buyers.router, prefix="/api/buyers", tags=["Buyers"])
 app.include_router(deals.router, prefix="/api/deals", tags=["Deals"])
 app.include_router(reviews.router, prefix="/api/reviews", tags=["Reviews"])
 app.include_router(
-    recommendations.router, 
-    prefix="/api/recommendations", 
+    recommendations.router,
+    prefix="/api/recommendations",
     tags=["Recommendations"]
 )
 app.include_router(
@@ -32,6 +33,17 @@ app.include_router(
     prefix="/api/analytics",
     tags=["Analytics"]
 )
+app.include_router(
+    notifications.router,
+    prefix="/api/notifications",
+    tags=["Notifications"]
+)
+app.include_router(
+    ai_copilot.router,
+    prefix="/api/copilot",
+    tags=["AI Copilot"]
+)
+
 
 @app.on_event("startup")
 async def startup():
