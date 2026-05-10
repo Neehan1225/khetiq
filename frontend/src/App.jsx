@@ -735,10 +735,39 @@ export default function App() {
       if (payload.exp && Date.now() / 1000 > payload.exp) {
         localStorage.clear();
         window.location.href = "/";
+      } else if (payload.role && !portal) {
+        // Also restore portal state on initial load if token exists
+        setPortal(payload.role);
       }
     } catch {
       localStorage.clear();
     }
+  }, [portal]);
+
+  // Cross-tab session synchronization
+  useEffect(() => {
+    const handleStorageChange = (e) => {
+      if (e.key === "khetiq_token") {
+        if (!e.newValue) {
+          // Token removed (logout)
+          setPortal(null);
+          window.location.href = "/";
+        } else {
+          // Token added or changed (new login)
+          try {
+            const payload = JSON.parse(atob(e.newValue.split(".")[1]));
+            if (payload.role) {
+              setPortal(payload.role);
+            }
+          } catch (err) {
+            console.error("Error parsing new token:", err);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorageChange);
+    return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
   return (
@@ -2772,16 +2801,16 @@ function AnalyticsDashboard() {
         {supply_demand.length > 0 ? (
           <ResponsiveContainer width="100%" height={320}>
             <BarChart data={supply_demand} margin={{ top: 5, right: 20, left: 10, bottom: 40 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="crop" angle={-35} textAnchor="end" tick={{ fill: "#64748b", fontSize: 11 }}
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="crop" angle={-35} textAnchor="end" tick={{ fill: "#e2e8f0", fontSize: 11 }}
                 axisLine={{ stroke: "rgba(255,255,255,0.08)" }} tickLine={false} height={60}
                 tickFormatter={v => v.charAt(0).toUpperCase() + v.slice(1)} />
-              <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+              <YAxis tick={{ fill: "#e2e8f0", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
                 tickLine={false} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-              <Tooltip contentStyle={chartTooltipStyle} cursor={{ fill: "rgba(255,255,255,0.03)" }}
+              <Tooltip contentStyle={{ background: "#1f2937", border: "1px solid #374151", color: "#fff", borderRadius: 8, padding: "8px 12px" }} cursor={{ fill: "rgba(255,255,255,0.03)" }}
                 formatter={(val, name) => [`${val.toLocaleString()} kg`, name === "supply" ? "Supply (listed)" : "Demand (offers)"]}
                 labelFormatter={v => v.charAt(0).toUpperCase() + v.slice(1)} />
-              <Legend wrapperStyle={{ fontSize: 12, color: "#94a3b8" }}
+              <Legend wrapperStyle={{ fontSize: 12, color: "#fff" }}
                 formatter={v => v === "supply" ? "Supply (listed by farmers)" : "Demand (buyer offers)"} />
               <Bar dataKey="supply" radius={[4, 4, 0, 0]} maxBarSize={32}>
                 {supply_demand.map((entry, i) => (
@@ -2796,16 +2825,16 @@ function AnalyticsDashboard() {
             </BarChart>
           </ResponsiveContainer>
         ) : (
-          <div style={{ textAlign: "center", padding: 60, color: "#475569" }}>No crop data available for this period</div>
+          <div style={{ textAlign: "center", padding: 60, color: "#e2e8f0" }}>No crop data available for this period</div>
         )}
         <div style={{ display: "flex", gap: 16, marginTop: 8, flexWrap: "wrap", fontSize: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748b" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#e2e8f0" }}>
             <div style={{ width: 12, height: 12, borderRadius: 3, background: "#4ade80", opacity: 0.7 }} /> Supply
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748b" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#e2e8f0" }}>
             <div style={{ width: 12, height: 12, borderRadius: 3, background: "#38bdf8", opacity: 0.7 }} /> Demand
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#64748b" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#e2e8f0" }}>
             <div style={{ width: 12, height: 12, borderRadius: 3, background: "#fb923c", opacity: 0.7 }} /> Demand &gt; Supply
           </div>
         </div>
