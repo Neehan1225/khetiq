@@ -1270,6 +1270,19 @@ function FarmerPortal({ toast, bg, onBack }) {
 
   const login = async (phone) => {
     if (phone.length !== 10) { toast("Enter valid 10-digit phone", "error"); return; }
+    
+    const existingToken = localStorage.getItem("khetiq_token");
+    if (existingToken) {
+      try {
+        const payload = JSON.parse(atob(existingToken.split(".")[1]));
+        if (!payload.exp || Date.now() / 1000 < payload.exp) {
+          const role = localStorage.getItem("khetiq_role") || payload.role || "farmer";
+          toast(`You are already logged in as a ${role}. Please logout first before switching accounts.`, "error");
+          return;
+        }
+      } catch (e) {}
+    }
+
     try {
       const r = await api.post(`${API}/farmers/login`, { phone });
       localStorage.setItem("khetiq_token", r.data.access_token);
@@ -2184,6 +2197,19 @@ function BuyerPortal({ toast, bg, onBack }) {
 
   const login = async (phone) => {
     if (phone.length !== 10) { toast("Enter valid 10-digit phone", "error"); return; }
+    
+    const existingToken = localStorage.getItem("khetiq_token");
+    if (existingToken) {
+      try {
+        const payload = JSON.parse(atob(existingToken.split(".")[1]));
+        if (!payload.exp || Date.now() / 1000 < payload.exp) {
+          const role = localStorage.getItem("khetiq_role") || payload.role || "buyer";
+          toast(`You are already logged in as a ${role}. Please logout first before switching accounts.`, "error");
+          return;
+        }
+      } catch (e) {}
+    }
+
     try {
       const r = await api.post(`${API}/buyers/login`, { phone });
       localStorage.setItem("khetiq_token", r.data.access_token);
