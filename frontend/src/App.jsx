@@ -2839,7 +2839,11 @@ function AnalyticsDashboard() {
                 tickFormatter={v => v.charAt(0).toUpperCase() + v.slice(1)} />
               <YAxis tick={{ fill: "#e2e8f0", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
                 tickLine={false} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-              <Tooltip contentStyle={{ background: "#1f2937", border: "1px solid #374151", color: "#fff", borderRadius: 8, padding: "8px 12px" }} cursor={{ fill: "rgba(255,255,255,0.03)" }}
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#ffffff', border: '1.5px solid #d0d0d0', borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }} 
+                labelStyle={{ color: '#111111', fontWeight: 'bold', fontSize: '15px' }} 
+                itemStyle={{ color: '#333333', fontSize: '13px' }} 
+                cursor={{ fill: "rgba(255,255,255,0.03)" }}
                 formatter={(val, name) => [`${val.toLocaleString()} kg`, name === "supply" ? "Supply (listed)" : "Demand (offers)"]}
                 labelFormatter={v => v.charAt(0).toUpperCase() + v.slice(1)} />
               <Legend wrapperStyle={{ fontSize: 12, color: "#fff" }}
