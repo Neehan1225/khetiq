@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import api from "./api";
 import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line } from "recharts";
@@ -722,7 +723,16 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
 }
 
 export default function App() {
-  const [portal, setPortal] = useState(null);
+  return (
+    <BrowserRouter>
+      <MainApp />
+    </BrowserRouter>
+  );
+}
+
+function MainApp() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [toast, setToast] = useState(null);
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
 
@@ -734,15 +744,13 @@ export default function App() {
       const payload = JSON.parse(atob(token.split(".")[1]));
       if (payload.exp && Date.now() / 1000 > payload.exp) {
         localStorage.clear();
-        window.location.href = "/";
-      } else if (payload.role && !portal) {
-        // Also restore portal state on initial load if token exists
-        setPortal(payload.role);
+        navigate("/");
       }
+      // Note: Removed auto-restoration of portal state to ensure Landing Page shows first on /
     } catch {
       localStorage.clear();
     }
-  }, [portal]);
+  }, [navigate]);
 
   // Cross-tab session synchronization
   useEffect(() => {
@@ -750,14 +758,13 @@ export default function App() {
       if (e.key === "khetiq_token") {
         if (!e.newValue) {
           // Token removed (logout)
-          setPortal(null);
-          window.location.href = "/";
+          navigate("/");
         } else {
           // Token added or changed (new login)
           try {
             const payload = JSON.parse(atob(e.newValue.split(".")[1]));
             if (payload.role) {
-              setPortal(payload.role);
+              navigate("/" + payload.role);
             }
           } catch (err) {
             console.error("Error parsing new token:", err);
@@ -768,18 +775,17 @@ export default function App() {
 
     window.addEventListener("storage", handleStorageChange);
     return () => window.removeEventListener("storage", handleStorageChange);
-  }, []);
+  }, [navigate]);
 
   return (
     <>
       <style>{CSS}</style>
       <Toast t={toast} />
-      {!portal
-        ? <Landing onSelect={setPortal} />
-        : portal === "farmer"
-          ? <FarmerPortal toast={showToast} bg={FARMER_IMAGES[0]} onBack={() => setPortal(null)} />
-          : <BuyerPortal toast={showToast} bg={BUYER_IMAGES[0]} onBack={() => setPortal(null)} />
-      }
+      <Routes>
+        <Route path="/" element={<Landing onSelect={(p) => navigate("/" + p)} />} />
+        <Route path="/farmer" element={<FarmerPortal toast={showToast} bg={FARMER_IMAGES[0]} onBack={() => navigate("/")} />} />
+        <Route path="/buyer" element={<BuyerPortal toast={showToast} bg={BUYER_IMAGES[0]} onBack={() => navigate("/")} />} />
+      </Routes>
     </>
   );
 }
