@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: "http://13.49.74.167:8000/api",
 });
 
 // ── Request interceptor: attach JWT from localStorage ──────────────────────────

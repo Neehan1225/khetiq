@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line } from "recharts";
 import "leaflet/dist/leaflet.css";
 
-const API = "http://localhost:8000/api";
+const API = "http://13.49.74.167:8000/api";
 
 const FARMER_IMAGES = [
   "https://images.unsplash.com/photo-1625246333195-78d9c38ad449?w=1600&q=80",
