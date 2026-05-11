@@ -232,7 +232,7 @@ Analyze this data and return ONLY valid JSON (no markdown fences, no extra text)
 }}"""
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt
         )
         text = response.text.strip()
@@ -343,7 +343,7 @@ Return ONLY valid JSON (no markdown fences):
 
         client = genai.Client(api_key=copilot_key)
         resp = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=genai.types.GenerateContentConfig(
                 system_instruction=sys_ins,
@@ -447,7 +447,7 @@ Return ONLY valid JSON (no markdown fences):
         copilot_key = settings.copilot_api_key or settings.gemini_api_key
         client = genai.Client(api_key=copilot_key)
         resp = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash",
             contents=[
                 prompt,
                 genai.types.Part.from_bytes(data=audio_bytes, mime_type="audio/webm")
@@ -507,7 +507,7 @@ async def transcribe_audio_with_gemini(audio_bytes: bytes, language: str):
         copilot_key = settings.copilot_api_key or settings.gemini_api_key
         client = genai.Client(api_key=copilot_key)
         resp = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
+            model="gemini-2.5-flash",
             contents=[
                 prompt,
                 genai.types.Part.from_bytes(data=audio_bytes, mime_type="audio/webm")
