@@ -288,7 +288,13 @@ function Toast({ t }) {
   if (!t) return null;
   return <div style={{ position: "fixed", top: 20, right: 20, zIndex: 9999, background: t.type === "error" ? "rgba(120,20,20,0.97)" : "rgba(15,70,35,0.97)", border: `1px solid ${t.type === "error" ? "#ef4444" : "#22c55e"}`, color: "#fff", padding: "14px 22px", borderRadius: 12, fontSize: 14, fontWeight: 500, backdropFilter: "blur(24px)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)", maxWidth: 360, lineHeight: 1.5 }}>{t.type === "error" ? "⚠ " : "✓ "}{t.msg}</div>;
 }
-function Spinner() { return <span className="spin" style={{ display: "inline-block", width: 16, height: 16, border: "2px solid rgba(255,255,255,0.2)", borderTopColor: "#fff", borderRadius: "50%" }} />; }
+function Spinner({ size = 16, color = "#fff" }) { 
+  return <span className="spin" style={{ 
+    display: "inline-block", width: size, height: size, 
+    border: `2px solid rgba(255,255,255,0.2)`, 
+    borderTopColor: color, borderRadius: "50%" 
+  }} />; 
+}
 function Badge({ color = "#94a3b8", children }) { return <span style={{ background: color + "18", border: `1px solid ${color}35`, color, padding: "3px 11px", borderRadius: 20, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{children}</span>; }
 function LockedBadge() { return <span style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)", color: "#4ade80", padding: "4px 14px", borderRadius: 20, fontSize: 12, fontWeight: 800, letterSpacing: "1.2px", whiteSpace: "nowrap", textTransform: "uppercase", boxShadow: "0 0 12px rgba(34,197,94,0.15)", display: "inline-flex", alignItems: "center", gap: 5 }}>🔒 LOCKED</span>; }
 function Card({ children, accent, onClick, style = {} }) { return <div onClick={onClick} style={{ background: "rgba(255,255,255,0.025)", border: `1px solid ${accent ? accent + "28" : "rgba(255,255,255,0.07)"}`, borderRadius: 16, padding: 24, ...style }}>{children}</div>; }
@@ -1267,6 +1273,7 @@ function ConfirmDeliveryModal({ onSubmit, onClose, lang }) {
 function FarmerPortal({ toast, bg, onBack }) {
   const [page, setPage] = useState("login");
   const [farmer, setFarmer] = useState(null);
+  const [loading, setLoading] = useState(!!localStorage.getItem("khetiq_token"));
   const [crops, setCrops] = useState([]);
   const [recommendation, setRecommendation] = useState(null);
   const [deals, setDeals] = useState([]);
@@ -1282,12 +1289,14 @@ function FarmerPortal({ toast, bg, onBack }) {
   // Silent session restore — runs on mount if navigated here from AppInner auto-redirect
   useEffect(() => {
     const token = localStorage.getItem("khetiq_token");
-    if (!token || farmer) return; // already logged in or no token
+    if (!token) { setLoading(false); return; }
+    if (farmer) { setLoading(false); return; }
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
       if (payload.exp && Date.now() / 1000 > payload.exp) {
         localStorage.removeItem("khetiq_token");
         localStorage.removeItem("khetiq_role");
+        setLoading(false);
         return;
       }
       if (payload.sub && payload.role === "farmer") {
@@ -1299,13 +1308,16 @@ function FarmerPortal({ toast, bg, onBack }) {
             const cropsRes = await api.get(`${API}/crops/farmer/${f.id}`);
             setCrops(cropsRes.data);
             setPage("dashboard");
+            setLoading(false);
           })
           .catch(() => {
-            // Token valid but fetch failed — stay on login
+            setLoading(false);
           });
+      } else {
+        setLoading(false);
       }
     } catch {
-      // Malformed token — ignore
+      setLoading(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1461,6 +1473,16 @@ function FarmerPortal({ toast, bg, onBack }) {
       toast("Review submitted! Thank you.");
     } catch (e) { toast("Failed to submit review", "error"); }
   };
+
+  if (loading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#04080f" }}>
+      <div style={{ textAlign: "center" }}>
+        <Spinner size={40} color="#4ade80" />
+        <div style={{ marginTop: 20, color: "#64748b", fontWeight: 700, fontFamily: "'Syne',sans-serif", fontSize: 18, letterSpacing: "1px" }}>RESTORING KHETIQ SESSION...</div>
+        <div style={{ marginTop: 8, color: "#475569", fontSize: 14 }}>Connecting to secure agricultural network</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "#04080f" }}>
@@ -1931,13 +1953,20 @@ function ProfileCardModal({ type, id, name, onClose }) {
 
 
 function NegotiationTimeline({ deal }) {
+  const isFinal = ["accepted", "rejected", "locked", "completed", "failed", "cancelled"].includes(deal.deal_status);
   const steps = [
     { label: "Original Offer", status: "done", price: deal.agreed_price_per_kg },
-    { label: "Counter Offer", status: deal.counter_price_per_kg ? "done" : deal.deal_status === "offer" ? "pending" : "skip", price: deal.counter_price_per_kg },
-    { label: "Final Status", status: ["accepted", "rejected", "locked"].includes(deal.deal_status) ? "done" : "pending" },
+    { label: "Counter Offer", status: deal.counter_price_per_kg ? "done" : isFinal ? "skip" : deal.deal_status === "offer" ? "pending" : "skip", price: deal.counter_price_per_kg },
+    { label: "Final Status", status: isFinal ? "done" : "pending" },
   ];
-  const statusLabel = deal.deal_status === "accepted" || deal.deal_status === "locked" ? "ACCEPTED" : deal.deal_status === "rejected" ? "REJECTED" : deal.deal_status === "bargaining" ? "NEGOTIATING" : "PENDING";
-  const statusClr = deal.deal_status === "accepted" || deal.deal_status === "locked" ? "#4ade80" : deal.deal_status === "rejected" ? "#f87171" : deal.deal_status === "bargaining" ? "#fbbf24" : "#64748b";
+  const statusLabel = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "ACCEPTED" : 
+                    deal.deal_status === "rejected" ? "REJECTED" : 
+                    deal.deal_status === "failed" ? "FAILED" : 
+                    deal.deal_status === "cancelled" ? "CANCELLED" : 
+                    deal.deal_status === "bargaining" ? "NEGOTIATING" : "PENDING";
+  const statusClr = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "#4ade80" : 
+                   (deal.deal_status === "rejected" || deal.deal_status === "failed") ? "#f87171" : 
+                   deal.deal_status === "bargaining" ? "#fbbf24" : "#64748b";
 
   return (
     <div style={{ marginBottom: 18 }}>
@@ -1952,13 +1981,13 @@ function NegotiationTimeline({ deal }) {
             {/* dot */}
             <div style={{
               width: 26, height: 26, borderRadius: "50%", zIndex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-              background: s.status === "done" ? "linear-gradient(135deg,#16a34a,#0891b2)" : "rgba(255,255,255,0.06)",
-              border: s.status === "done" ? "none" : "2px solid rgba(255,255,255,0.12)",
+              background: s.status === "done" ? "linear-gradient(135deg,#16a34a,#0891b2)" : s.status === "skip" && isFinal ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.06)",
+              border: s.status === "done" ? "none" : s.status === "skip" && isFinal ? "2px solid rgba(74,222,128,0.3)" : "2px solid rgba(255,255,255,0.12)",
               animation: s.status === "done" ? "step-pop 0.4s ease" : "none",
               boxShadow: s.status === "done" ? "0 0 12px rgba(74,222,128,0.25)" : "none",
-              fontSize: 12, color: "#fff", fontWeight: 700,
+              fontSize: 12, color: s.status === "skip" && isFinal ? "#4ade80" : "#fff", fontWeight: 700,
             }}>
-              {s.status === "done" ? "✓" : i + 1}
+              {s.status === "done" || (s.status === "skip" && isFinal) ? "✓" : i + 1}
             </div>
             {/* label */}
             <div style={{ fontSize: 11, color: s.status === "done" ? "#e2e8f0" : "#475569", fontWeight: 600, marginTop: 8, textAlign: "center", lineHeight: 1.3 }}>{s.label}</div>
@@ -2225,6 +2254,7 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
 function BuyerPortal({ toast, bg, onBack }) {
   const [page, setPage] = useState("login");
   const [buyer, setBuyer] = useState(null);
+  const [loading, setLoading] = useState(!!localStorage.getItem("khetiq_token"));
   const [crops, setCrops] = useState([]);
   const [deals, setDeals] = useState([]);
   const [farmers, setFarmers] = useState([]);
@@ -2237,31 +2267,35 @@ function BuyerPortal({ toast, bg, onBack }) {
   // Silent session restore — runs on mount if navigated here from AppInner auto-redirect
   useEffect(() => {
     const token = localStorage.getItem("khetiq_token");
-    if (!token || buyer) return; // already logged in or no token
+    if (!token) { setLoading(false); return; }
+    if (buyer) { setLoading(false); return; }
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
       if (payload.exp && Date.now() / 1000 > payload.exp) {
         localStorage.removeItem("khetiq_token");
         localStorage.removeItem("khetiq_role");
+        setLoading(false);
         return;
       }
       if (payload.sub && payload.role === "buyer") {
         api.get(`${API}/buyers/`)
           .then(async (res) => {
-            // Find buyer by ID from the sub claim
             const b = res.data.find(x => String(x.id) === String(payload.sub));
-            if (!b) return;
+            if (!b) { setLoading(false); return; }
             setBuyer(b);
             const cropsRes = await api.get(`${API}/crops/`);
             setCrops(cropsRes.data);
             setPage("market");
+            setLoading(false);
           })
           .catch(() => {
-            // Token valid but fetch failed — stay on login
+            setLoading(false);
           });
+      } else {
+        setLoading(false);
       }
     } catch {
-      // Malformed token — ignore
+      setLoading(false);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2393,6 +2427,16 @@ function BuyerPortal({ toast, bg, onBack }) {
     } catch { toast("Failed to reject deal", "error"); }
   };
 
+
+  if (loading) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#04080f" }}>
+      <div style={{ textAlign: "center" }}>
+        <Spinner size={40} color="#38bdf8" />
+        <div style={{ marginTop: 20, color: "#64748b", fontWeight: 700, fontFamily: "'Syne',sans-serif", fontSize: 18, letterSpacing: "1px" }}>RESTORING KHETIQ SESSION...</div>
+        <div style={{ marginTop: 8, color: "#475569", fontSize: 14 }}>Connecting to secure agricultural network</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "#04080f" }}>
