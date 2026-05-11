@@ -47,10 +47,13 @@ async def create_review(review: ReviewCreate, db: AsyncSession = Depends(get_db)
     today = datetime.now(timezone.utc).date()
     ref_date = deal.proposed_delivery_date or deal.expected_delivery_date
     is_late = False
-    if ref_date and deal.deal_status in ("offer", "accepted", "bargaining") and ref_date < today:
+    if ref_date and deal.deal_status in ("offer", "accepted", "bargaining", "locked") and ref_date < today:
         is_late = True
         
-    if deal.deal_status in ("completed", "accepted"):
+    if deal.deal_status == "completed":
+        review_type = "verified"
+    elif deal.deal_status in ("accepted", "locked") and not is_late:
+        # For ongoing accepted/locked deals that are on time, we treat them as verified reviews
         review_type = "verified"
     elif deal.deal_status in ("rejected", "failed") or is_late:
         review_type = "feedback"
@@ -58,7 +61,7 @@ async def create_review(review: ReviewCreate, db: AsyncSession = Depends(get_db)
         if review.reason not in valid_reasons:
             raise HTTPException(status_code=400, detail=f"Feedback review requires a valid reason: {valid_reasons}")
     else:
-        raise HTTPException(status_code=400, detail="Deal must be completed, accepted, rejected, or late to be reviewed.")
+        raise HTTPException(status_code=400, detail="Deal must be completed, accepted, locked, rejected, or late to be reviewed.")
 
     # Check if a review already exists for this deal by this reviewer
     existing = await db.execute(
