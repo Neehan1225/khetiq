@@ -43,7 +43,9 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd /home/ubuntu/khetiq
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             docker-compose down
-            docker-compose up --build --detach
+            docker-compose build --no-cache frontend
+            docker-compose up --detach
             docker ps
