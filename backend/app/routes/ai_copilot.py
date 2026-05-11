@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
@@ -33,50 +33,86 @@ class CopilotRequest(BaseModel):
 @router.post("/ask")
 async def ask_copilot(req: CopilotRequest, db: AsyncSession = Depends(get_db)):
     """Gemini-powered conversational AI advisor for farmers and buyers."""
-    from app.services.gemini_service import get_copilot_response
+    from app.services.gemini_service import get_copilot_response, _agent_debug_log
 
-    # Fetch user name
-    user_name = "User"
-    if req.user_type == "farmer":
-        result = await db.execute(select(Farmer).where(Farmer.id == req.user_id))
-        farmer = result.scalar_one_or_none()
-        if farmer:
-            user_name = farmer.name
-    else:
-        result = await db.execute(select(Buyer).where(Buyer.id == req.user_id))
-        buyer = result.scalar_one_or_none()
-        if buyer:
-            user_name = buyer.name
-
-    # Enrich context with recent deals if not provided
-    context = req.context or {}
-    if not context.get("recent_deals"):
-        if req.user_type == "farmer":
-            r = await db.execute(
-                select(Deal).where(Deal.farmer_id == req.user_id)
-                .order_by(Deal.created_at.desc()).limit(3)
-            )
-        else:
-            r = await db.execute(
-                select(Deal).where(Deal.buyer_id == req.user_id)
-                .order_by(Deal.created_at.desc()).limit(3)
-            )
-        recent = r.scalars().all()
-        context["recent_deals"] = [
-            {"crop": d.crop_type, "price": d.agreed_price_per_kg,
-             "qty": d.quantity_kg, "status": d.deal_status}
-            for d in recent
-        ]
-
-    response_data = await get_copilot_response(
-        user_type=req.user_type,
-        user_name=user_name,
-        language=req.language,
-        context=context,
-        message=req.message,
-        apmc_prices=APMC_PRICES,
+    # #region agent log
+    _agent_debug_log(
+        "H6",
+        "ai_copilot.py:ask_copilot",
+        "route_enter",
+        {
+            "user_type": req.user_type,
+            "language": req.language,
+            "msg_len": len(req.message or ""),
+            "has_context": bool(req.context),
+        },
     )
-    return response_data
+    # #endregion
+
+    try:
+        # Fetch user name
+        user_name = "User"
+        if req.user_type == "farmer":
+            result = await db.execute(select(Farmer).where(Farmer.id == req.user_id))
+            farmer = result.scalar_one_or_none()
+            if farmer:
+                user_name = farmer.name
+        else:
+            result = await db.execute(select(Buyer).where(Buyer.id == req.user_id))
+            buyer = result.scalar_one_or_none()
+            if buyer:
+                user_name = buyer.name
+
+        # Enrich context with recent deals if not provided
+        context = req.context or {}
+        if not context.get("recent_deals"):
+            if req.user_type == "farmer":
+                r = await db.execute(
+                    select(Deal).where(Deal.farmer_id == req.user_id)
+                    .order_by(Deal.created_at.desc()).limit(3)
+                )
+            else:
+                r = await db.execute(
+                    select(Deal).where(Deal.buyer_id == req.user_id)
+                    .order_by(Deal.created_at.desc()).limit(3)
+                )
+            recent = r.scalars().all()
+            context["recent_deals"] = [
+                {"crop": d.crop_type, "price": d.agreed_price_per_kg,
+                 "qty": d.quantity_kg, "status": d.deal_status}
+                for d in recent
+            ]
+
+        response_data = await get_copilot_response(
+            user_type=req.user_type,
+            user_name=user_name,
+            language=req.language,
+            context=context,
+            message=req.message,
+            apmc_prices=APMC_PRICES,
+        )
+        # #region agent log
+        _agent_debug_log(
+            "H6",
+            "ai_copilot.py:ask_copilot",
+            "route_exit_ok",
+            {
+                "response_len": len((response_data or {}).get("response") or ""),
+                "n_suggestions": len((response_data or {}).get("suggestions") or []),
+            },
+        )
+        # #endregion
+        return response_data
+    except Exception as e:
+        # #region agent log
+        _agent_debug_log(
+            "H6",
+            "ai_copilot.py:ask_copilot",
+            "route_exception",
+            {"exc_type": type(e).__name__, "exc": str(e)[:800]},
+        )
+        # #endregion
+        raise
 
 
 @router.post("/voice")
@@ -84,22 +120,55 @@ async def voice_copilot(
     user_type: str,
     user_id: uuid.UUID,
     language: str = "kn",
+    context_str: Optional[str] = Form(None),
     audio: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
     """Processes raw audio using Gemini's multi-modal capabilities."""
-    from app.services.gemini_service import get_copilot_voice_response
-    
+    from app.services.gemini_service import get_copilot_voice_response, _agent_debug_log
+    import json
+
     audio_bytes = await audio.read()
-    
-    # Context logic (simplified)
-    context = {"recent_deals": []}
-    
-    response_data = await get_copilot_voice_response(
-        user_type=user_type,
-        language=language,
-        audio_bytes=audio_bytes,
-        context=context,
-        apmc_prices=APMC_PRICES
+    # #region agent log
+    _agent_debug_log(
+        "H6",
+        "ai_copilot.py:voice_copilot",
+        "route_enter",
+        {"user_type": user_type, "language": language, "audio_bytes": len(audio_bytes), "has_context_str": bool(context_str)},
     )
-    return response_data
+    # #endregion
+
+    try:
+        context = {}
+        if context_str:
+            try:
+                context = json.loads(context_str)
+            except Exception as e:
+                print(f"Error parsing context_str: {e}")
+
+        response_data = await get_copilot_voice_response(
+            user_type=user_type,
+            language=language,
+            audio_bytes=audio_bytes,
+            context=context,
+            apmc_prices=APMC_PRICES
+        )
+        # #region agent log
+        _agent_debug_log(
+            "H6",
+            "ai_copilot.py:voice_copilot",
+            "route_exit_ok",
+            {"keys": list((response_data or {}).keys())},
+        )
+        # #endregion
+        return response_data
+    except Exception as e:
+        # #region agent log
+        _agent_debug_log(
+            "H6",
+            "ai_copilot.py:voice_copilot",
+            "route_exception",
+            {"exc_type": type(e).__name__, "exc": str(e)[:800]},
+        )
+        # #endregion
+        raise

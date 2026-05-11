@@ -28,6 +28,102 @@ const LANGUAGES = [
   { code: "mr", label: "मराठी", name: "Marathi", speech: "mr-IN" },
   { code: "en", label: "English", name: "English", speech: "en-IN" },
 ];
+
+/** Copilot: net profit = (price_per_kg × quantity_kg) − transport_cost; never show ₹0 as net profit placeholder. */
+const COPILOT_TRANSPORT_WARNING = {
+  kn: "⚠️ ಸಾರಿಗೆ ವೆಚ್ಚು ಈ ದೂರಕ್ಕೆ ಬೆಳೆ ಮೌಲ್ಯವನ್ನು ಮೀರಿದೆ.",
+  hi: "⚠️ इस दूरी पर परिवहन लागत फसल की कीमत से अधिक है।",
+  te: "⚠️ ఈ దూరానికి రవాణా ఖర్చు పంట విలువను దాటింది.",
+  ta: "⚠️ இந்த தூரத்திற்கு போக்குவரத்து செலவு பயிர் மதிப்பை விட அதிகமாகும்.",
+  mr: "⚠️ या अंतरावर वाहतूक खर्च पिकाच्या मूल्यापेक्षा जास्त आहे.",
+  en: "⚠️ Transport cost exceeds crop value for this distance.",
+};
+
+function deriveCopilotNetProfitFromAnalysis(analysisContext) {
+  if (!analysisContext?.best_buyer) return null;
+  const pricePerKg = Number(analysisContext.apmc_price_per_kg ?? analysisContext.apmc_price ?? 0);
+  const quantityKg = Number(analysisContext.quantity_kg ?? 0);
+  const transport = Number(analysisContext.best_buyer.transport_cost ?? 0);
+  const gross = Math.round(pricePerKg * quantityKg);
+  const net = Math.round(pricePerKg * quantityKg - transport);
+  return { pricePerKg, quantityKg, transport, gross, net };
+}
+
+function enrichAnalysisDataForCopilot(analysisContext) {
+  if (!analysisContext || typeof analysisContext !== "object") return analysisContext ?? {};
+  const d = deriveCopilotNetProfitFromAnalysis(analysisContext);
+  if (!d) return { ...analysisContext };
+  return {
+    ...analysisContext,
+    copilot_derived_financials: {
+      formula: "(price_per_kg * quantity_kg) - transport_cost",
+      price_per_kg: d.pricePerKg,
+      quantity_kg: d.quantityKg,
+      transport_cost: d.transport,
+      gross_revenue: d.gross,
+      computed_net_profit: d.net,
+      transport_exceeds_crop_value: d.net < 0,
+      negative_margin_warning_text: COPILOT_TRANSPORT_WARNING,
+      display_authority_note:
+        "For this crop recommendation, ALWAYS quote computed_net_profit from copilot_derived_financials; do not reuse net_profit fields from nested buyer objects unless they match this formula.",
+    },
+  };
+}
+
+function formatCopilotComputedProfitSentence(lang, d) {
+  if (!d) return "";
+  const w = COPILOT_TRANSPORT_WARNING[lang] || COPILOT_TRANSPORT_WARNING.en;
+  if (d.net < 0) {
+    return `${w}\nEstimated net after transport: ₹${d.net.toLocaleString("en-IN")} (revenue ₹${d.gross.toLocaleString("en-IN")} − transport ₹${d.transport.toLocaleString("en-IN")}).`;
+  }
+  if (d.net > 0) {
+    const pos = {
+      kn: `ಸಾರಿಗೆ ನಂತರ ನಿಟ್ಟ ₹${d.net.toLocaleString("en-IN")} (ಮೊತ್ತ ₹${d.gross.toLocaleString("en-IN")} − ಸಾರಿಗೆ ₹${d.transport.toLocaleString("en-IN")}).`,
+      hi: `परिवहन के बाद शुद्ध ₹${d.net.toLocaleString("en-IN")} (कुल ₹${d.gross.toLocaleString("en-IN")} − परिवहन ₹${d.transport.toLocaleString("en-IN")}).`,
+      te: `రవాణా తర్వాత నికర ₹${d.net.toLocaleString("en-IN")} (దిగుబడి ₹${d.gross.toLocaleString("en-IN")} − రవాణా ₹${d.transport.toLocaleString("en-IN")}).`,
+      ta: `போக்குவரத்துக்குப் பிறகு நிகர ₹${d.net.toLocaleString("en-IN")} (மொத்தம் ₹${d.gross.toLocaleString("en-IN")} − போக்குவரத்து ₹${d.transport.toLocaleString("en-IN")}).`,
+      mr: `वाहतुकीनंतर निव्वळ ₹${d.net.toLocaleString("en-IN")} (एकूण ₹${d.gross.toLocaleString("en-IN")} − वाहतूक ₹${d.transport.toLocaleString("en-IN")}).`,
+      en: `Net after transport ₹${d.net.toLocaleString("en-IN")} (revenue ₹${d.gross.toLocaleString("en-IN")} − transport ₹${d.transport.toLocaleString("en-IN")}).`,
+    };
+    return pos[lang] || pos.en;
+  }
+  if (d.gross <= 0 && d.transport <= 0) {
+    const m = {
+      kn: "ಬೆಲೆ ಅಥವಾ ಪ್ರಮಾಣ ಲಭ್ಯವಿಲ್ಲದ ಕಾರಣ ಲಾಭ ಲೆಕ್ಕಿಸಲಾಗಿಲ್ಲ.",
+      hi: "मूल्य या मात्रा के अभाव में लाभ की गणना संभव नहीं।",
+      te: "ధర లేదా పరిమాణం లేకుండా లాభం లెక్కించలేము.",
+      en: "Cannot compute profit without price and quantity.",
+    };
+    return m[lang] || m.en;
+  }
+  const be = {
+    kn: `ಸಾರಿಗೆ ನಂತರ ಉಳಿದ ಲಾಭ ಇಲ್ಲ — ಆದಾಯ ₹${d.gross.toLocaleString("en-IN")}, ಸಾರಿಗೆ ₹${d.transport.toLocaleString("en-IN")} (ಶೂನ್ಯ ಉಳಿಕೆ).`,
+    hi: `परिवहन के बाद कोई लाभ नहीं — आय ₹${d.gross.toLocaleString("en-IN")}, परिवहन ₹${d.transport.toLocaleString("en-IN")} (संतुलित).`,
+    te: `రవాణా తర్వాత మిగులు లేదు — ఆదాయ ₹${d.gross.toLocaleString("en-IN")}, రవాణా ₹${d.transport.toLocaleString("en-IN")}.`,
+    ta: `போக்குவரத்துக்குப் பிறகு மீதமில்லை — வருவாய் ₹${d.gross.toLocaleString("en-IN")}, போக்குவரத்து ₹${d.transport.toLocaleString("en-IN")}.`,
+    mr: `वाहतुकीनंतर उर्वरित नफा नाही — उत्पन्न ₹${d.gross.toLocaleString("en-IN")}, वाहतूक ₹${d.transport.toLocaleString("en-IN")}.`,
+    en: `Break-even after transport — revenue ₹${d.gross.toLocaleString("en-IN")} equals transport ₹${d.transport.toLocaleString("en-IN")} (do not quote ₹0 as net profit).`,
+  };
+  return be[lang] || be.en;
+}
+
+function copilotInitialGreetingText(lang, analysisContext) {
+  const d = deriveCopilotNetProfitFromAnalysis(analysisContext);
+  const crop = analysisContext?.crop || "crop";
+  const ri = analysisContext?.resilience_index ?? "—";
+  const buyer = analysisContext?.best_buyer?.name || "";
+  const profitLine = formatCopilotComputedProfitSentence(lang, d);
+  const common = `\n${profitLine}`;
+  const byLang = {
+    kn: `✅ ನಿಮ್ಮ ${crop} ವಿಶ್ಲೇಷಣೆ ಸಿದ್ಧ! ಸ್ಥಿತಿಸ್ಥಾಪಕತ್ವ: ${ri}/100. ಉತ್ತಮ ಖರೀದಿದಾರ: ${buyer}.` + common,
+    hi: `✅ आपके ${crop} का विश्लेषण तैयार है। लचीलापन सूचकांक: ${ri}/100. सर्वश्रेष्ठ खरीदार: ${buyer}.` + common,
+    te: `✅ మీ ${crop} విశ్లేషణ సిద్ధం। స్థితిస్థాపక సూచిక: ${ri}/100. ఉత్తమ కొనుగోలుదారు: ${buyer}.` + common,
+    ta: `✅ உங்கள் ${crop} பகுப்பாய்வு தயார். உறுதிப்பாட்டுக் குறியீடு: ${ri}/100. சிறந்த வாங்குபவர்: ${buyer}.` + common,
+    mr: `✅ तुमची ${crop} विश्लेषण तयार आहे. स्थितिस्थापकता: ${ri}/100. सर्वोत्तम खरेददार: ${buyer}.` + common,
+    en: `✅ Your ${crop} analysis is loaded. Resilience index: ${ri}/100. Best buyer: ${buyer}.` + common,
+  };
+  return byLang[lang] || byLang.en;
+}
 const CROPS = ["tomato", "onion", "potato", "brinjal", "cabbage", "cauliflower", "beans", "carrot", "chilli", "garlic", "ginger", "maize", "wheat", "rice", "banana", "mango", "grapes", "pomegranate"];
 const DISTRICTS = ["Belagavi", "Dharwad", "Mysuru", "Bengaluru", "Hubli", "Davanagere", "Tumkur", "Hassan", "Shivamogga", "Mangaluru", "Vijayapura", "Kalaburagi", "Ballari", "Bidar", "Raichur", "Koppal", "Gadag", "Haveri", "Chikkamagaluru", "Mandya", "Udupi", "Kodagu"];
 const BUYER_TYPES = [
@@ -362,6 +458,8 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
   const [sugg, setSugg] = useState(["Should I sell now?", "Best price today?", "Reduce transport cost?"]);
+  const [fullContext, setFullContext] = useState(null);
+  const [loadingData, setLoadingData] = useState(false);
   const endRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -371,6 +469,23 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
   const grad = isFarmer ? "linear-gradient(135deg,#16a34a,#0891b2)" : "linear-gradient(135deg,#0891b2,#6366f1)";
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs]);
+
+  useEffect(() => {
+    if (!open) {
+      setFullContext(null);
+      setLoadingData(false);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    setFullContext((fc) => {
+      if (!fc) return fc;
+      return {
+        ...fc,
+        analysis_data: enrichAnalysisDataForCopilot(analysisContext || {}),
+      };
+    });
+  }, [analysisContext]);
 
   // Translation for local messages
   const tLocal = (key, args = {}) => {
@@ -403,194 +518,42 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
   };
 
   useEffect(() => {
-    if (analysisContext && open) {
-      const crop = analysisContext.crop || "your crop";
-      const welcome = tLocal('welcome', { 
-        crop, ri: analysisContext.resilience_index, 
-        buyer: analysisContext.best_buyer?.name || "N/A", 
-        profit: Math.round(analysisContext.net_profit_estimate || 0) 
-      });
-      setMsgs(m => {
-        if (m.find(x => x.isAnalysisWelcome)) return m;
-        return [...m, { r: "a", text: welcome, isAnalysisWelcome: true }];
-      });
-      setSugg(tLocal('sugg'));
+    if (open && !fullContext && !loadingData) {
+      const loadContext = async () => {
+        setLoadingData(true);
+        try {
+          const [dashRes, buyersRes, dealsRes] = await Promise.all([
+            api.get(`${API}/analytics/dashboard`),
+            api.get(`${API}/buyers/`),
+            userType === "farmer" ? api.get(`${API}/deals/farmer/${userId}`) : api.get(`${API}/deals/buyer/${userId}`)
+          ]);
+          setFullContext({
+            analysis_data: enrichAnalysisDataForCopilot(analysisContext || {}),
+            dashboard_market_intelligence: dashRes.data.intelligence,
+            supply_demand: dashRes.data.supply_demand,
+            fulfillment_rate: dashRes.data.summary.fulfillment_rate,
+            all_buyers: buyersRes.data.map(b => ({ name: b.name, district: b.district, location: { lat: b.location_lat, lng: b.location_lng } })),
+            deal_history: dealsRes.data.map(d => ({ crop: d.crop_type, qty: d.quantity_kg, price: d.agreed_price_per_kg, status: d.deal_status, created_at: d.created_at }))
+          });
+        } catch (e) {
+          console.error("Failed to load full context", e);
+          setFullContext({ analysis_data: enrichAnalysisDataForCopilot(analysisContext || {}) });
+        } finally {
+          setLoadingData(false);
+        }
+      };
+      loadContext();
     }
-  }, [analysisContext, open, lang]);
-
-  // Smart local Q&A from analysis data — computes real answers
-  const tryLocalAnswer = (txt) => {
-    if (!analysisContext) return null;
-    const q = txt.toLowerCase();
-    const { crop, resilience_index, risk_level, weather, apmc_price_per_kg,
-            best_buyer, net_profit_estimate, reasoning, price_tip,
-            harvest_urgency, urgency_reason, quantity_kg } = analysisContext;
-    const price = apmc_price_per_kg || 0;
-    const qty = quantity_kg || 0;
-    const grossRevenue = price * qty;
-    const transport = best_buyer?.transport_cost || 0;
-    const netProfit = net_profit_estimate || (grossRevenue - transport);
-    const buyerName = best_buyer?.name || "recommended buyer";
-    const dist = best_buyer?.distance_km || 0;
-
-    // Extract number of days from question like "12 days", "2 weeks", "1 month"
-    const extractDays = (text) => {
-      const dayMatch = text.match(/(\d+)\s*days?/i);
-      if (dayMatch) return parseInt(dayMatch[1]);
-      const weekMatch = text.match(/(\d+)\s*weeks?/i);
-      if (weekMatch) return parseInt(weekMatch[1]) * 7;
-      const monthMatch = text.match(/(\d+)\s*months?/i);
-      if (monthMatch) return parseInt(monthMatch[1]) * 30;
-      return null;
-    };
-
-    // Storage cost: ₹0.50/kg/day for perishables, ₹0.20/kg/day for grains
-    const perishables = ["tomato", "onion", "potato", "banana", "mango", "grape", "watermelon"];
-    const isPerishable = perishables.some(p => crop?.toLowerCase().includes(p));
-    const storageCostPerKgPerDay = isPerishable ? 0.50 : 0.20;
-    // Spoilage: perishables lose ~1.5%/day, grains ~0.2%/day
-    const spoilageRatePerDay = isPerishable ? 0.015 : 0.002;
-    // Price volatility: ~0.3% random daily swing
-    const priceVolatilityPerDay = 0.003;
-
-    // ── WAIT / DELAY questions (most important fix) ──
-    if (q.includes("wait") || q.includes("later") || q.includes("hold") || q.includes("delay") || q.match(/\d+\s*(day|week|month)/)) {
-      const days = extractDays(txt) || 7;
-      const storageCost = Math.round(storageCostPerKgPerDay * qty * days);
-      const spoilageLoss = Math.round(qty * spoilageRatePerDay * days);
-      const remainingQty = Math.max(0, qty - spoilageLoss);
-      const priceChange = Math.round(price * priceVolatilityPerDay * days * (Math.random() > 0.5 ? 1 : -1));
-      const newPrice = Math.max(price * 0.85, price + priceChange);
-      const newRevenue = Math.round(remainingQty * newPrice);
-      const newProfit = Math.round(newRevenue - transport - storageCost);
-      const profitDiff = newProfit - Math.round(netProfit);
-      const riskLabel = days <= 3 ? "LOW" : days <= 7 ? "MODERATE" : days <= 14 ? "HIGH" : "VERY HIGH";
-
-      return `📊 Waiting ${days} days to sell ${crop}:\n` +
-        `• Storage cost: ₹${storageCost} (₹${storageCostPerKgPerDay}/kg/day)\n` +
-        `• Estimated spoilage: ${spoilageLoss} kg lost (${(spoilageRatePerDay * days * 100).toFixed(1)}%)\n` +
-        `• Sellable quantity: ${Math.round(remainingQty)} kg (from ${qty} kg)\n` +
-        `• Estimated profit after ${days} days: ₹${newProfit}\n` +
-        `• Compared to selling today: ${profitDiff >= 0 ? "+" : ""}₹${profitDiff}\n` +
-        `• Delay risk: ${riskLabel}\n` +
-        `${days > 7 ? "⚠️ Recommendation: Sell within 7 days to minimize losses." : "✅ Manageable delay if stored properly."}`;
-    }
-
-    // ── SELL timing ──
-    if (q.includes("sell now") || q.includes("should i sell") || q.includes("right time")) {
-      const score = resilience_index || 50;
-      if (score >= 75) return `✅ YES — sell now. Resilience: ${score}/100, risk is ${risk_level}. Current APMC price ₹${price}/kg is strong. Net profit: ₹${Math.round(netProfit)} with ${buyerName}. Delaying risks spoilage and price drops.`;
-      if (score >= 50) return `⚡ CONSIDER selling soon. Resilience: ${score}/100 (${risk_level} risk). Price is ₹${price}/kg. You could wait 3-5 days but not longer. Net profit today: ₹${Math.round(netProfit)}.`;
-      return `⚠️ SELL IMMEDIATELY. Resilience is only ${score}/100 (${risk_level} risk). Every day you wait, you risk losing ₹${Math.round(qty * spoilageRatePerDay * price)}/day to spoilage. Net profit today: ₹${Math.round(netProfit)}.`;
-    }
-
-    // ── RESILIENCE ──
-    if (q.includes("resilience") || q.includes("score") || q.includes("index")) {
-      const ri = resilience_index || 0;
-      const grade = ri >= 80 ? "A (Excellent)" : ri >= 60 ? "B (Good)" : ri >= 40 ? "C (Average)" : "D (Poor)";
-      return `📈 Resilience Index: ${ri}/100 — Grade ${grade}\n• Risk: ${risk_level}\n• ${ri >= 70 ? "Your crop is market-ready with strong fundamentals." : "Sell quickly — your crop's market position is weakening."}\n• ${reasoning || ""}`;
-    }
-
-    // ── PROFIT ──
-    if (q.includes("profit") || q.includes("earn") || q.includes("money") || q.includes("income") || q.includes("revenue")) {
-      return tLocal('profit', {
-        qty, crop, gross: Math.round(grossRevenue),
-        trans: Math.round(transport), net: Math.round(netProfit),
-        perKg: (netProfit / qty).toFixed(2)
-      });
-    }
-
-    // ── WEATHER ──
-    if (q.includes("weather") || q.includes("rain") || q.includes("forecast") || q.includes("climate")) {
-      return tLocal('weather', {
-        weather: weather || "N/A",
-        urgency: harvest_urgency || "normal"
-      });
-    }
-
-    // ── SELL timing ──
-    if (q.includes("sell now") || q.includes("should i sell") || q.includes("right time")) {
-      return tLocal('sell', { ri: resilience_index, price });
-    }
-
-    // ── PRICE ──
-    if (q.includes("price") || q.includes("rate") || q.includes("apmc") || q.includes("mandi")) {
-      return `💹 APMC Mandi Rate for ${crop}: ₹${price}/kg\n• Total value at current rate: ₹${Math.round(grossRevenue)}\n${price_tip ? `• Tip: ${price_tip}` : "• Prices fluctuate daily — check APMC portal for live rates."}`;
-    }
-
-    // ── TRANSPORT ──
-    if (q.includes("transport") || q.includes("distance") || q.includes("delivery") || q.includes("logistics")) {
-      if (!best_buyer) return "Run AI Analysis to calculate transport costs.";
-      return `🚛 Transport Details:\n• Buyer: ${buyerName} in ${best_buyer.district}\n• Distance: ${Math.round(dist)} km\n• Estimated cost: ₹${Math.round(transport)}\n• Cost per kg: ₹${(transport / qty).toFixed(2)}/kg\n• This is the most cost-effective buyer by logistics.`;
-    }
-
-    // ── RISK ──
-    if (q.includes("risk") || q.includes("danger") || q.includes("safe") || q.includes("loss")) {
-      const dailyLoss = Math.round(qty * spoilageRatePerDay * price);
-      return `⚡ Risk Assessment for ${crop}:\n• Risk level: ${(risk_level || "unknown").toUpperCase()}\n• Daily spoilage loss: ~₹${dailyLoss}/day\n• Storage cost: ₹${storageCostPerKgPerDay}/kg/day\n• ${reasoning || ""}\n• Recommendation: ${risk_level === "high" ? "Sell within 2 days." : risk_level === "medium" ? "Sell within 5 days." : "You have 7-10 days safely."}`;
-    }
-
-    // ── HARVEST / WHEN ──
-    if (q.includes("harvest") || q.includes("when") || q.includes("urgent")) {
-      return harvest_urgency === "urgent"
-        ? `🚨 URGENT: ${urgency_reason}\n• Sell immediately to ${buyerName} for ₹${Math.round(netProfit)} net profit.\n• Every day of delay risks ~₹${Math.round(qty * spoilageRatePerDay * price)} in losses.`
-        : `⏰ No immediate urgency.\n• Safe window: 5-7 days\n• Current profit if sold today: ₹${Math.round(netProfit)}\n• After 7 days, expect ~₹${Math.round(storageCostPerKgPerDay * qty * 7)} in storage costs + spoilage.`;
-    }
-
-    // ── CROP RECOMMENDATION ──
-    if (q.includes("best crop") || q.includes("which crop") || q.includes("grow") || q.includes("plant") || q.includes("next crop") || q.includes("next season")) {
-      return `🌱 Crop Recommendations for your region:\n• Rabi: Wheat, Gram, Groundnut (Oct-Mar)\n• Kharif: Rice, Maize, Cotton (Jun-Oct)\n• Year-round: Tomato, Onion, Potato\n• Tip: ${crop} is currently at ₹${price}/kg. Diversify to reduce market risk.`;
-    }
-
-    // ── COMPARE / NEGOTIATE ──
-    if (q.includes("negotiate") || q.includes("bargain") || q.includes("higher price") || q.includes("more money")) {
-      const targetPrice = Math.round(price * 1.1);
-      return `🤝 Negotiation Tips for ${crop}:\n• Current APMC rate: ₹${price}/kg\n• Target asking price: ₹${targetPrice}/kg (+10%)\n• Your leverage: ${qty} kg is ${qty > 500 ? "a bulk order — buyers prefer this" : "a smaller lot — consider pooling with nearby farmers"}\n• Resilience ${resilience_index}/100 means ${resilience_index >= 70 ? "strong position" : "weaker position — accept fair offers quickly"}.`;
-    }
-
-    // ── QUANTITY ──
-    if (q.includes("quantity") || q.includes("how much") || q.includes("kg") || q.includes("stock")) {
-      return `📦 Your Stock:\n• Crop: ${crop}\n• Quantity: ${qty} kg\n• APMC rate: ₹${price}/kg\n• Total value: ₹${Math.round(grossRevenue)}\n• After transport to ${buyerName}: ₹${Math.round(netProfit)} net.`;
-    }
-
-    // ── GREETINGS ──
-    if (q.includes("hello") || q.includes("hi") || q.includes("hey") || q.includes("thanks") || q.includes("thank")) {
-      return `👋 Hello! I'm your KhetIQ Copilot. I have your ${crop} analysis loaded (${qty} kg, ₹${price}/kg, ${resilience_index}/100 resilience). What would you like to know?`;
-    }
-
-    // ── CATCH-ALL: give a useful summary ──
-    return `📋 Here's what I know about your ${crop}:\n• Quantity: ${qty} kg at ₹${price}/kg\n• Best buyer: ${buyerName} (${Math.round(dist)} km)\n• Net profit: ₹${Math.round(netProfit)}\n• Risk: ${risk_level} | Resilience: ${resilience_index}/100\n\nTry asking: "What if I wait 10 days?", "How much profit?", or "What's the transport cost?"`;
-  };
+  }, [open, fullContext, analysisContext, userType, userId, loadingData]);
 
   const send = async (txt) => {
     const t = (txt || inp).trim();
-    if (!t || !userId) return;
+    if (!t || !userId || busy || loadingData || !fullContext) return;
     setInp(""); setMsgs(m => [...m, { r: "u", text: t }]); setBusy(true);
 
-    // Try answering locally first
-    const localAnswer = tryLocalAnswer(t);
-    if (localAnswer) {
-      setTimeout(() => {
-        setMsgs(m => [...m, { r: "a", text: localAnswer }]);
-        setBusy(false);
-      }, 400);
-      return;
-    }
-
-    // Fall back to Gemini API
     try {
-      const context = analysisContext ? {
-        crop_type: analysisContext.crop,
-        quantity_kg: analysisContext.quantity_kg,
-        apmc_price: analysisContext.apmc_price_per_kg,
-        resilience_index: analysisContext.resilience_index,
-        risk_level: analysisContext.risk_level,
-        weather: analysisContext.weather,
-        best_buyer: analysisContext.best_buyer?.name,
-        net_profit: analysisContext.net_profit_estimate,
-      } : {};
       const res = await api.post(`${API}/copilot/ask`, {
-        user_type: userType, user_id: userId, language: lang, message: t, context
+        user_type: userType, user_id: userId, language: lang, message: t, context: fullContext,
       });
       setMsgs(m => [...m, { r: "a", text: res.data.response }]);
       if (res.data.suggestions?.length) setSugg(res.data.suggestions);
@@ -601,6 +564,7 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
   };
 
   const startRecording = async () => {
+    if (busy || loadingData || !fullContext) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
@@ -628,13 +592,14 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
 
   const sendVoice = async () => {
     const blob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-    if (blob.size < 1000) return;
+    if (blob.size < 1000 || loadingData || !fullContext) return;
 
     setBusy(true);
     setMsgs(m => [...m, { r: "u", text: "🎤 (Voice Message)" }]);
 
     const formData = new FormData();
     formData.append("audio", blob, "voice.webm");
+    if (fullContext) formData.append("context_str", JSON.stringify(fullContext));
 
     try {
       const res = await api.post(`${API}/copilot/voice?user_type=${userType}&user_id=${userId}&language=${lang}`, formData);
@@ -672,11 +637,12 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
             </div>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {!msgs.length && <div style={{ textAlign: "center", padding: "20px 0", color: "#64748b", fontSize: 13 }}>
-              {analysisContext
-                ? `✅ Analysis loaded for ${analysisContext.crop}. Ask me anything!`
-                : "Run AI Analysis first, then ask me anything about prices, deals, or crops! 🌾"
-              }
+            {!msgs.length && <div style={{ textAlign: "left", padding: "14px 12px", color: "#cbd5e1", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+              {loadingData
+                ? "Loading market data..."
+                : isFarmer && analysisContext?.best_buyer
+                  ? copilotInitialGreetingText(lang, analysisContext)
+                  : "✅ Real-time data loaded. Ask me anything about prices, buyers, deals, or market trends!"}
             </div>}
             {msgs.map((m, i) => (
               <div key={i} style={{ display: "flex", justifyContent: m.r === "u" ? "flex-end" : "flex-start" }}>
@@ -688,10 +654,32 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
           </div>
           <div style={{ padding: "12px", borderTop: "1px solid rgba(255,255,255,0.06)", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
-              {sugg.map((s, i) => <button key={i} onClick={() => send(s)} style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${accent}30`, color: accent, borderRadius: 20, padding: "3px 9px", fontSize: 10, cursor: "pointer", fontWeight: 500 }}>{s}</button>)}
+              {sugg.map((s, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={loadingData || busy || !fullContext}
+                  onClick={() => send(s)}
+                  style={{
+                    background: "rgba(255,255,255,0.04)",
+                    border: `1px solid ${accent}30`,
+                    color: accent,
+                    borderRadius: 20,
+                    padding: "3px 9px",
+                    fontSize: 10,
+                    cursor: loadingData || busy || !fullContext ? "not-allowed" : "pointer",
+                    fontWeight: 500,
+                    opacity: loadingData || busy || !fullContext ? 0.45 : 1,
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button
+                type="button"
+                disabled={loadingData || busy || !fullContext}
                 onMouseDown={startRecording}
                 onMouseUp={stopRecording}
                 onMouseLeave={stopRecording}
@@ -701,18 +689,20 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
                   width: 42, height: 42, borderRadius: "50%", border: "none",
                   background: recording ? "#ef4444" : "rgba(255,255,255,0.06)",
                   color: recording ? "#fff" : accent,
-                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                  cursor: loadingData || busy || !fullContext ? "not-allowed" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
                   fontSize: 18, transition: "all 0.2s",
                   boxShadow: recording ? "0 0 15px rgba(239,68,68,0.4)" : "none",
-                  animation: recording ? "pulse 1s infinite" : "none"
+                  animation: recording ? "pulse 1s infinite" : "none",
+                  opacity: loadingData || busy || !fullContext ? 0.45 : 1,
                 }}
               >
                 {recording ? "⏹" : "🎤"}
               </button>
               <div style={{ flex: 1, position: "relative" }}>
-                <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !busy && send(inp)} placeholder={recording ? "Listening..." : analysisContext ? `Ask about ${analysisContext.crop}...` : "Ask anything..."} style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${recording ? "#ef4444" : accent}30`, color: "#e2e8f0", padding: "11px 14px", borderRadius: 12, fontSize: 13, outline: "none" }} />
+                <input value={inp} onChange={e => setInp(e.target.value)} onKeyDown={e => e.key === "Enter" && !busy && !loadingData && !!fullContext && send(inp)} placeholder={loadingData ? "Loading..." : !fullContext ? "Loading..." : recording ? "Listening..." : "Ask anything..."} disabled={loadingData || !fullContext} style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${recording ? "#ef4444" : accent}30`, color: "#e2e8f0", padding: "11px 14px", borderRadius: 12, fontSize: 13, outline: "none", opacity: loadingData || !fullContext ? 0.5 : 1 }} />
               </div>
-              <button onClick={() => !busy && send(inp)} style={{ background: grad, border: "none", color: "#fff", borderRadius: 12, width: 42, height: 42, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>→</button>
+              <button type="button" onClick={() => !busy && !loadingData && !!fullContext && send(inp)} disabled={loadingData || !fullContext} style={{ background: grad, border: "none", color: "#fff", borderRadius: 12, width: 42, height: 42, cursor: loadingData || !fullContext ? "not-allowed" : "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center", opacity: loadingData || !fullContext ? 0.5 : 1 }}>→</button>
             </div>
             {recording && <div style={{ fontSize: 10, color: "#ef4444", textAlign: "center", marginTop: 6, fontWeight: 600 }}>RELEASE TO SEND</div>}
           </div>
@@ -725,32 +715,47 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <MainApp />
+      <AppInner />
     </BrowserRouter>
   );
 }
 
-function MainApp() {
+function AppInner() {
   const navigate = useNavigate();
   const location = useLocation();
   const [toast, setToast] = useState(null);
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
 
-  // Silent token-expiry check on every page load
+  // Session auto-restore on app load (like Gmail / Instagram)
   useEffect(() => {
     const token = localStorage.getItem("khetiq_token");
-    if (!token) return;
+    if (!token) return; // No token → stay on landing page
+
     try {
       const payload = JSON.parse(atob(token.split(".")[1]));
+
+      // Check expiry
       if (payload.exp && Date.now() / 1000 > payload.exp) {
-        localStorage.clear();
+        // Token expired → clear and stay on landing
+        localStorage.removeItem("khetiq_token");
+        localStorage.removeItem("khetiq_role");
         navigate("/");
+        return;
       }
-      // Note: Removed auto-restoration of portal state to ensure Landing Page shows first on /
+
+      // Token is valid → restore session by navigating to the correct portal
+      const role = localStorage.getItem("khetiq_role");
+      if (role === "farmer") {
+        navigate("/farmer", { replace: true });
+      } else if (role === "buyer") {
+        navigate("/buyer", { replace: true });
+      }
     } catch {
-      localStorage.clear();
+      // Malformed token → clear and stay on landing
+      localStorage.removeItem("khetiq_token");
+      localStorage.removeItem("khetiq_role");
     }
-  }, [navigate]);
+  }, []); // Run once on mount only — intentionally omitting navigate from deps
 
   // Cross-tab session synchronization
   useEffect(() => {
@@ -1196,11 +1201,14 @@ function DealLockOverlay({ data, onDismiss }) {
   );
 }
 
-function ConfirmDeliveryModal({ onSubmit, onClose }) {
+function ConfirmDeliveryModal({ onSubmit, onClose, lang }) {
   const minDate = new Date(Date.now() + 3 * 86400000).toISOString().split("T")[0];
+  const maxDate = new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0];
   const [date, setDate] = useState(minDate);
   const [slot, setSlot] = useState("morning");
   const [notes, setNotes] = useState("");
+  const { listening, listen, stop } = useVoice();
+  const speechCode = LANGUAGES.find(l => l.code === lang)?.speech || "en-IN";
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1217,7 +1225,7 @@ function ConfirmDeliveryModal({ onSubmit, onClose }) {
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div>
             <Label>Proposed Delivery Date</Label>
-            <input type="date" required min={minDate} value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }} />
+            <input type="date" required min={minDate} max={maxDate} value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff" }} />
           </div>
           <div>
             <Label>Proposed Time Slot</Label>
@@ -1238,7 +1246,14 @@ function ConfirmDeliveryModal({ onSubmit, onClose }) {
           </div>
           <div>
             <Label>Delivery Notes (Optional)</Label>
-            <textarea maxLength={100} value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Max 100 characters..." style={{ width: "100%", padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", resize: "none" }} />
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <textarea maxLength={100} value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Max 100 characters..."
+                style={{ flex: 1, padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", resize: "none" }} />
+              <button type="button" onClick={() => listening ? stop() : listen(speechCode, v => setNotes(prev => (prev + " " + v).trim().slice(0, 100)))}
+                style={{ padding: "11px 13px", background: listening ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.08)", border: `1px solid ${listening ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.25)"}`, color: listening ? "#f87171" : "#4ade80", borderRadius: 10, cursor: "pointer", fontSize: 16, flexShrink: 0, marginTop: 1 }}>
+                <span className={listening ? "pulse" : ""}>{listening ? "⏹" : "🎤"}</span>
+              </button>
+            </div>
           </div>
           <Btn type="submit" variant="primary">Confirm & Lock Deal</Btn>
         </form>
@@ -1263,6 +1278,36 @@ function FarmerPortal({ toast, bg, onBack }) {
   const [profileModal, setProfileModal] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
   const [highlightDealId, setHighlightDealId] = useState(null);
+
+  // Silent session restore — runs on mount if navigated here from AppInner auto-redirect
+  useEffect(() => {
+    const token = localStorage.getItem("khetiq_token");
+    if (!token || farmer) return; // already logged in or no token
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (payload.exp && Date.now() / 1000 > payload.exp) {
+        localStorage.removeItem("khetiq_token");
+        localStorage.removeItem("khetiq_role");
+        return;
+      }
+      if (payload.sub && payload.role === "farmer") {
+        api.get(`${API}/farmers/${payload.sub}`)
+          .then(async (res) => {
+            const f = res.data;
+            setFarmer(f);
+            setLang(f.language || "kn");
+            const cropsRes = await api.get(`${API}/crops/farmer/${f.id}`);
+            setCrops(cropsRes.data);
+            setPage("dashboard");
+          })
+          .catch(() => {
+            // Token valid but fetch failed — stay on login
+          });
+      }
+    } catch {
+      // Malformed token — ignore
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onNotificationAction = (n) => {
     if (n.deal_id) {
@@ -1324,6 +1369,13 @@ function FarmerPortal({ toast, bg, onBack }) {
 
   const addCrop = async (form) => {
     if (!form.quantity_kg) { toast("Enter quantity", "error"); return; }
+    if (form.expected_harvest_date) {
+      const today = new Date().toISOString().split("T")[0];
+      if (form.expected_harvest_date <= today) {
+        toast("Harvest date cannot be in the past. Please select a future date.", "error");
+        return false;
+      }
+    }
     try {
       await api.post(`${API}/crops/`, { ...form, farmer_id: farmer.id, quantity_kg: parseFloat(form.quantity_kg), field_size_acres: parseFloat(form.field_size_acres) || null });
       await loadCrops(farmer); toast("Crop added!"); return true;
@@ -1450,7 +1502,7 @@ function FarmerPortal({ toast, bg, onBack }) {
       {profileModal && <ProfileCardModal type={profileModal.type} id={profileModal.id} name={profileModal.name} onClose={() => setProfileModal(null)} />}
       {reviewModal && <ReviewModal data={reviewModal} onClose={() => setReviewModal(null)} onSubmit={handleReviewSubmit} />}
       {farmer && <CopilotPanel userType="farmer" userId={farmer.id} lang={lang} analysisContext={recommendation} />}
-      {deliveryModalData && <ConfirmDeliveryModal onSubmit={executeLockDeal} onClose={() => setDeliveryModalData(null)} />}
+      {deliveryModalData && <ConfirmDeliveryModal onSubmit={executeLockDeal} onClose={() => setDeliveryModalData(null)} lang={lang} />}
     </div>
   );
 }
@@ -1600,14 +1652,8 @@ function FDashboard({ farmer, crops, onAddCrop, onAnalyze, analyzingId, lang }) 
               <SelectInput label="Crop Type" value={form.crop_type} onChange={F("crop_type")} options={CROPS} />
               <div>
                 <Label>Quantity (kg)</Label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <input type="number" value={form.quantity_kg} onChange={e => F("quantity_kg")(e.target.value)} placeholder="500"
-                    style={{ flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "#e2e8f0", padding: "11px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
-                  <button onClick={() => listening ? stop() : listen(speechCode, v => F("quantity_kg")(parseVoiceDigits(v)))}
-                    style={{ padding: "11px 13px", background: listening ? "rgba(239,68,68,0.1)" : "rgba(34,197,94,0.08)", border: `1px solid ${listening ? "rgba(239,68,68,0.3)" : "rgba(34,197,94,0.25)"}`, color: listening ? "#f87171" : "#4ade80", borderRadius: 10, cursor: "pointer" }}>
-                    <span className={listening ? "pulse" : ""}>{listening ? "⏹" : "🎤"}</span>
-                  </button>
-                </div>
+                <input type="number" value={form.quantity_kg} onChange={e => F("quantity_kg")(e.target.value)} placeholder="500"
+                  style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "#e2e8f0", padding: "11px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
               </div>
               <div>
                 <Label>Field Size (acres)</Label>
@@ -1617,6 +1663,8 @@ function FDashboard({ farmer, crops, onAddCrop, onAnalyze, analyzingId, lang }) 
               <div>
                 <Label>Expected Harvest Date</Label>
                 <input type="date" value={form.expected_harvest_date} onChange={e => F("expected_harvest_date")(e.target.value)}
+                  min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
+                  max={new Date(Date.now() + 365 * 86400000).toISOString().split("T")[0]}
                   style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "#e2e8f0", padding: "11px 14px", borderRadius: 10, fontSize: 14, outline: "none", colorScheme: "dark" }} />
               </div>
             </div>
@@ -1723,9 +1771,9 @@ function FAnalysis({ rec, onBack, onLockDeal, farmerLang }) {
                 <div style={{ color: "#475569", fontSize: 13 }}>{b.district} • {b.distance_km.toFixed(0)}km • ₹{b.transport_cost.toFixed(0)} transport</div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontWeight: 700, fontSize: 17, color: i === 0 ? "#4ade80" : "#64748b" }}>₹{b.net_profit.toLocaleString()}</div>
+                <div style={{ fontWeight: 700, fontSize: 17, color: b.net_profit < 0 ? "#f87171" : (i === 0 ? "#4ade80" : "#64748b") }}>₹{b.net_profit.toLocaleString()}</div>
                 <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: 2, height: 3, marginTop: 5, width: 72 }}>
-                  <div style={{ background: i === 0 ? "#4ade80" : "#1e3a5f", height: "100%", borderRadius: 2, width: `${(b.net_profit / maxP) * 100}%` }} />
+                  <div style={{ background: b.net_profit < 0 ? "rgba(248,113,113,0.3)" : (i === 0 ? "#4ade80" : "#1e3a5f"), height: "100%", borderRadius: 2, width: maxP > 0 && b.net_profit > 0 ? `${(b.net_profit / maxP) * 100}%` : "0%" }} />
                 </div>
               </div>
             </div>
@@ -2186,6 +2234,37 @@ function BuyerPortal({ toast, bg, onBack }) {
   const [reviewModal, setReviewModal] = useState(null);
   const [highlightDealId, setHighlightDealId] = useState(null);
 
+  // Silent session restore — runs on mount if navigated here from AppInner auto-redirect
+  useEffect(() => {
+    const token = localStorage.getItem("khetiq_token");
+    if (!token || buyer) return; // already logged in or no token
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      if (payload.exp && Date.now() / 1000 > payload.exp) {
+        localStorage.removeItem("khetiq_token");
+        localStorage.removeItem("khetiq_role");
+        return;
+      }
+      if (payload.sub && payload.role === "buyer") {
+        api.get(`${API}/buyers/`)
+          .then(async (res) => {
+            // Find buyer by ID from the sub claim
+            const b = res.data.find(x => String(x.id) === String(payload.sub));
+            if (!b) return;
+            setBuyer(b);
+            const cropsRes = await api.get(`${API}/crops/`);
+            setCrops(cropsRes.data);
+            setPage("market");
+          })
+          .catch(() => {
+            // Token valid but fetch failed — stay on login
+          });
+      }
+    } catch {
+      // Malformed token — ignore
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const onNotificationAction = (n) => {
     if (n.deal_id) {
       setHighlightDealId(n.deal_id);
@@ -2246,7 +2325,7 @@ function BuyerPortal({ toast, bg, onBack }) {
     }
   };
 
-  const makeOffer = async (crop, farmer, pricePerKg, qty) => {
+  const makeOffer = async (crop, farmer, pricePerKg, qty, date, slot, notes) => {
     if (!buyer) return;
     const distKm = (buyer?.location_lat && farmer?.location_lat) ? haversine(buyer.location_lat, buyer.location_lng, farmer.location_lat, farmer.location_lng) : 50;
     const transportCost = Math.round(distKm * (qty > 500 ? 10 : 12));
@@ -2254,7 +2333,11 @@ function BuyerPortal({ toast, bg, onBack }) {
       await api.post(`${API}/deals/`, {
         farmer_id: farmer.id, buyer_id: buyer.id, crop_type: crop.crop_type, quantity_kg: qty,
         agreed_price_per_kg: pricePerKg, transport_cost: transportCost,
-        expected_delivery_date: new Date(Date.now() + 5 * 86400000).toISOString().split("T")[0],
+        expected_delivery_date: date,
+        proposed_delivery_date: date,
+        proposed_time_slot: slot,
+        delivery_notes: notes,
+        initiated_by: "buyer", deal_status: "offer"
       });
       toast(`Offer sent to ${farmer.name}! ₹${pricePerKg}/kg for ${qty}kg`);
       setOfferModal(null);
@@ -2333,7 +2416,7 @@ function BuyerPortal({ toast, bg, onBack }) {
           {buyer && <button onClick={() => { localStorage.clear(); setBuyer(null); setCrops([]); setDeals([]); setFarmers([]); setPage("login"); onBack(); }} style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", color: "#64748b", cursor: "pointer", fontSize: 13, padding: "5px 12px", borderRadius: 8, display: "flex", alignItems: "center", gap: 5, transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(248,113,113,0.4)"; e.currentTarget.style.color = "#f87171"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "#64748b"; }}>🚪 Logout</button>}
         </div>
       </header>
-      {offerModal && <OfferModal crop={offerModal.crop} farmer={offerModal.farmer} buyer={buyer} onConfirm={makeOffer} onClose={() => setOfferModal(null)} />}
+      {offerModal && <OfferModal crop={offerModal.crop} farmer={offerModal.farmer} buyer={buyer} onConfirm={makeOffer} onClose={() => setOfferModal(null)} lang={lang} />}
       <div className="fadeUp" style={{ maxWidth: page === "analytics" ? 1200 : 880, margin: "0 auto", padding: "32px 20px", transition: "max-width 0.3s" }}>
         {page === "login" && <BLogin onLogin={login} onRegister={() => setPage("register")} bg={bg} lang={lang} />}
         {page === "register" && <BRegister onRegister={register} onBack={() => setPage("login")} lang={lang} setLang={setLang} />}
@@ -2348,11 +2431,18 @@ function BuyerPortal({ toast, bg, onBack }) {
   );
 }
 
-function OfferModal({ crop, farmer, buyer, onConfirm, onClose }) {
+function OfferModal({ crop, farmer, buyer, onConfirm, onClose, lang }) {
+  const minDate = new Date(Date.now() + 3 * 86400000).toISOString().split("T")[0];
+  const maxDate = new Date(Date.now() + 90 * 86400000).toISOString().split("T")[0];
   const distKm = (buyer?.location_lat && farmer?.location_lat) ? haversine(buyer.location_lat, buyer.location_lng, farmer.location_lat, farmer.location_lng) : 50;
   const apmc = APMC_PRICES_FRONT[crop.crop_type] || 20;
   const [price, setPrice] = useState(String(apmc));
   const [qty, setQty] = useState(String(Math.min(crop.quantity_kg, 500)));
+  const [date, setDate] = useState(minDate);
+  const [slot, setSlot] = useState("morning");
+  const [notes, setNotes] = useState("");
+  const { listening, listen, stop } = useVoice();
+  const speechCode = LANGUAGES.find(l => l.code === lang)?.speech || "en-IN";
   const [submitting, setSubmitting] = useState(false);
   const pNum = parseFloat(price) || 0, qNum = parseFloat(qty) || 0;
   const transportEst = parseFloat((distKm * (qNum > 500 ? 10 : 12)).toFixed(0));
@@ -2361,12 +2451,12 @@ function OfferModal({ crop, farmer, buyer, onConfirm, onClose }) {
   const handleConfirm = async () => {
     if (pNum <= 0 || qNum <= 0) return;
     if (qNum > crop.quantity_kg) { alert(`Max available: ${crop.quantity_kg} kg`); return; }
-    setSubmitting(true); await onConfirm(crop, farmer, pNum, qNum); setSubmitting(false);
+    setSubmitting(true); await onConfirm(crop, farmer, pNum, qNum, date, slot, notes); setSubmitting(false);
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", backdropFilter: "blur(10px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-      <div className="fadeUp" style={{ background: "#0a1628", border: "1px solid rgba(56,189,248,0.22)", borderRadius: 20, padding: 32, width: "100%", maxWidth: 460 }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", backdropFilter: "blur(10px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, overflowY: "auto" }}>
+      <div className="fadeUp" style={{ background: "#0a1628", border: "1px solid rgba(56,189,248,0.22)", borderRadius: 20, padding: 32, width: "100%", maxWidth: 460, margin: "auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
           <div>
             <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 22, fontWeight: 800, textTransform: "capitalize" }}>Make Offer — {crop.crop_type}</div>
@@ -2375,20 +2465,53 @@ function OfferModal({ crop, farmer, buyer, onConfirm, onClose }) {
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 24, lineHeight: 1, padding: "0 4px" }}>×</button>
         </div>
         <div style={{ display: "grid", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div>
+              <Label>Offer Price (₹/kg)</Label>
+              <div style={{ position: "relative" }}>
+                <input type="number" value={price} onChange={e => setPrice(e.target.value)} min="1" step="0.5"
+                  style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(56,189,248,0.3)", color: "#e2e8f0", padding: "12px 15px", borderRadius: 10, fontSize: 15, outline: "none", boxSizing: "border-box" }} />
+                <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#475569", fontSize: 12, pointerEvents: "none" }}>APMC ₹{apmc}</div>
+              </div>
+            </div>
+            <div>
+              <Label>Quantity (kg)</Label>
+              <input type="number" value={qty} onChange={e => setQty(e.target.value)} min="1" max={crop.quantity_kg}
+                style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "#e2e8f0", padding: "12px 15px", borderRadius: 10, fontSize: 15, outline: "none", boxSizing: "border-box" }} />
+              <div style={{ color: "#475569", fontSize: 11, marginTop: 4 }}>Avail: {crop.quantity_kg} kg</div>
+            </div>
+          </div>
+          
           <div>
-            <Label>Your Offer Price (₹/kg)</Label>
-            <div style={{ position: "relative" }}>
-              <input type="number" value={price} onChange={e => setPrice(e.target.value)} min="1" step="0.5"
-                style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(56,189,248,0.3)", color: "#e2e8f0", padding: "12px 15px", borderRadius: 10, fontSize: 15, outline: "none", boxSizing: "border-box" }} />
-              <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "#475569", fontSize: 12, pointerEvents: "none" }}>APMC ₹{apmc}/kg</div>
+            <Label>Proposed Delivery Date</Label>
+            <input type="date" required min={minDate} max={maxDate} value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", colorScheme: "dark" }} />
+          </div>
+          <div>
+            <Label>Proposed Time Slot</Label>
+            <div style={{ display: "flex", gap: 10, marginTop: 4, flexWrap: "wrap", fontSize: 13 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="bslot" value="morning" checked={slot === "morning"} onChange={() => setSlot("morning")} /> Morning
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="bslot" value="afternoon" checked={slot === "afternoon"} onChange={() => setSlot("afternoon")} /> Afternoon
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                <input type="radio" name="bslot" value="evening" checked={slot === "evening"} onChange={() => setSlot("evening")} /> Evening
+              </label>
             </div>
           </div>
           <div>
-            <Label>Quantity (kg)</Label>
-            <input type="number" value={qty} onChange={e => setQty(e.target.value)} min="1" max={crop.quantity_kg}
-              style={{ width: "100%", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", color: "#e2e8f0", padding: "12px 15px", borderRadius: 10, fontSize: 15, outline: "none", boxSizing: "border-box" }} />
-            <div style={{ color: "#475569", fontSize: 12, marginTop: 4 }}>Available: {crop.quantity_kg} kg</div>
+            <Label>Delivery Notes (Optional)</Label>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <textarea maxLength={100} value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Max 100 characters..."
+                style={{ flex: 1, padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", resize: "none" }} />
+              <button type="button" onClick={() => listening ? stop() : listen(speechCode, v => setNotes(prev => (prev + " " + v).trim().slice(0, 100)))}
+                style={{ padding: "10px 12px", background: listening ? "rgba(239,68,68,0.1)" : "rgba(56,189,248,0.08)", border: `1px solid ${listening ? "rgba(239,68,68,0.3)" : "rgba(56,189,248,0.25)"}`, color: listening ? "#f87171" : "#38bdf8", borderRadius: 10, cursor: "pointer", fontSize: 16, flexShrink: 0, marginTop: 1 }}>
+                <span className={listening ? "pulse" : ""}>{listening ? "⏹" : "🎤"}</span>
+              </button>
+            </div>
           </div>
+
           <div style={{ background: "rgba(56,189,248,0.05)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, padding: 16 }}>
             <div style={{ color: "#64748b", fontSize: 11, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 12 }}>Deal Preview</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
