@@ -13,10 +13,10 @@ jobs:
         working-directory: ./backend
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -24,6 +24,11 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Verify app loads
+        env:
+          DATABASE_URL: "postgresql+asyncpg://dummy:dummy@localhost:5432/dummy"
+          GEMINI_API_KEY: "dummy"
+          GOOGLE_MAPS_API_KEY: "dummy"
+          SECRET_KEY: "dummy"
         run: python -c "import sys; sys.path.insert(0, '.'); from app.main import app; print('App loaded successfully')"
 
   deploy:
