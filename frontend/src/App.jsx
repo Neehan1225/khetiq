@@ -1333,19 +1333,9 @@ function FarmerPortal({ toast, bg, onBack }) {
 
   const login = async (phone) => {
     if (phone.length !== 10) { toast("Enter valid 10-digit phone", "error"); return; }
-    
-    const existingToken = localStorage.getItem("khetiq_token");
-    if (existingToken) {
-      try {
-        const payload = JSON.parse(atob(existingToken.split(".")[1]));
-        if (!payload.exp || Date.now() / 1000 < payload.exp) {
-          const role = localStorage.getItem("khetiq_role") || payload.role || "farmer";
-          toast(`You are already logged in as a ${role}. Please logout first before switching accounts.`, "error");
-          return;
-        }
-      } catch (e) {}
-    }
-
+    // Clear any stale token before logging in — user is on the login page intentionally
+    localStorage.removeItem("khetiq_token");
+    localStorage.removeItem("khetiq_role");
     try {
       const r = await api.post(`${API}/farmers/login`, { phone });
       localStorage.setItem("khetiq_token", r.data.access_token);
@@ -1356,7 +1346,7 @@ function FarmerPortal({ toast, bg, onBack }) {
       await loadCrops(f); toast(`Welcome back, ${f.name}!`); setPage("dashboard");
     } catch (e) {
       if (e.response?.status === 401) toast("Not registered. Please register first.", "error");
-      else toast("Login failed", "error");
+      else toast("Login failed. Please check your phone number.", "error");
     }
   };
 
@@ -1649,7 +1639,7 @@ function FRegister({ onRegister, onBack, lang, setLang }) {
             {gpsError && <div style={{ color: "#f87171", fontSize: 13, marginTop: 8, background: "rgba(248,113,113,0.08)", padding: "10px", borderRadius: 8, border: "1px solid rgba(248,113,113,0.2)" }}>⚠️ {gpsError}</div>}
             {!gpsError && <div style={{ color: "#475569", fontSize: 12, marginTop: 6 }}>Your exact location helps find the nearest buyers and calculate accurate transport costs.</div>}
           </div>
-          <Btn onClick={() => onRegister({ ...form, language: lang })} full style={{ padding: 14, fontSize: 15, opacity: canSubmit ? 1 : 0.45, pointerEvents: canSubmit ? "auto" : "none", transition: "opacity 0.2s" }}>Register & Get Started →</Btn>
+          <Btn onClick={() => onRegister({ ...form, language: lang })} full style={{ padding: 14, fontSize: 15, transition: "opacity 0.2s" }}>Register & Get Started →</Btn>
         </div>
       </Card>
     </div>
@@ -2347,19 +2337,9 @@ function BuyerPortal({ toast, bg, onBack }) {
 
   const login = async (phone) => {
     if (phone.length !== 10) { toast("Enter valid 10-digit phone", "error"); return; }
-    
-    const existingToken = localStorage.getItem("khetiq_token");
-    if (existingToken) {
-      try {
-        const payload = JSON.parse(atob(existingToken.split(".")[1]));
-        if (!payload.exp || Date.now() / 1000 < payload.exp) {
-          const role = localStorage.getItem("khetiq_role") || payload.role || "buyer";
-          toast(`You are already logged in as a ${role}. Please logout first before switching accounts.`, "error");
-          return;
-        }
-      } catch (e) {}
-    }
-
+    // Clear any stale token before logging in — user is on the login page intentionally
+    localStorage.removeItem("khetiq_token");
+    localStorage.removeItem("khetiq_role");
     try {
       const r = await api.post(`${API}/buyers/login`, { phone });
       localStorage.setItem("khetiq_token", r.data.access_token);
@@ -2370,7 +2350,7 @@ function BuyerPortal({ toast, bg, onBack }) {
       setBuyer(b); await loadMarket(); toast(`Welcome back, ${b.name}!`); setPage("market");
     } catch (e) {
       if (e.response?.status === 401) toast("Not registered. Please register.", "error");
-      else toast("Login failed", "error");
+      else toast("Login failed. Please check your phone number.", "error");
     }
   };
 
@@ -2723,7 +2703,7 @@ function BRegister({ onRegister, onBack, lang, setLang }) {
             </Btn>
             {gpsError && <div style={{ color: "#f87171", fontSize: 13, marginTop: 8, background: "rgba(248,113,113,0.08)", padding: "10px", borderRadius: 8, border: "1px solid rgba(248,113,113,0.2)" }}>⚠️ {gpsError}</div>}
           </div>
-          <Btn onClick={() => onRegister(form)} full style={{ padding: 14, fontSize: 15, opacity: canSubmit ? 1 : 0.45, pointerEvents: canSubmit ? "auto" : "none", transition: "opacity 0.2s" }}>Register & Browse Farmers →</Btn>
+          <Btn onClick={() => onRegister(form)} full style={{ padding: 14, fontSize: 15, transition: "opacity 0.2s" }}>Register & Browse Farmers →</Btn>
         </div>
       </Card>
     </div>
