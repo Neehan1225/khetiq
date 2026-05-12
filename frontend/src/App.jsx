@@ -407,6 +407,7 @@ function PriceTrendWidget({ cropType }) {
 }
 
 // ── Feature 3: Notification Bell ─────────────────────────────────────────────
+//coment added for demonstration
 function NotificationBell({ userType, userId, onAction }) {
   const [open, setOpen] = useState(false);
   const [nd, setNd] = useState(null);
