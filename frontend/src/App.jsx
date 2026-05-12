@@ -819,7 +819,7 @@ function Landing({ onSelect }) {
         {/* Hero Section */}
         <div style={{ marginBottom: 64 }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(74,222,128,0.1)", border: "1px solid rgba(74,222,128,0.3)", color: "#4ade80", padding: "6px 16px", borderRadius: 100, fontSize: 13, fontWeight: 700, marginBottom: 24, letterSpacing: "0.5px" }}>
-            🌾 Built for Indian Farmers
+            🌾 Built for Indian Farmers and buyers across india
           </div>
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: "clamp(36px,6vw,72px)", fontWeight: 900, letterSpacing: "-3px", lineHeight: 0.95, color: "#fff" }}>
             <div>Know Your Farm.</div>
