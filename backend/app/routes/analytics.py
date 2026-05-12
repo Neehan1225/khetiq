@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
+from collections import defaultdict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func as sqlfunc, case, and_
 from app.database import get_db
@@ -136,8 +137,8 @@ async def analytics_dashboard(
     total_buyers = len(buyers)
     total_deals = len(deals)
     total_accepted = len(accepted)
-    # Match seed data where completion is tracked by payment_status
-    completed_deals = len([d for d in deals if d.payment_status == "completed"])
+    # Match deal lifecycle where completion is tracked by deal_status
+    completed_deals = len([d for d in deals if d.deal_status == "completed"])
     fulfillment_rate = round((completed_deals / total_accepted * 100), 1) if total_accepted > 0 else 0
 
     # ── Top Rated Farmers & Buyers ────────────────────────────────────

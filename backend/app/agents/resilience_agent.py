@@ -87,7 +87,7 @@ async def run_resilience_agent(farmer, crop, buyers, lang=None):
         "harvest_urgency": ai_result.get("harvest_urgency", "normal"),
         "urgency_reason": ai_result.get("urgency_reason"),
         "best_buyer": best_buyer,
-        "net_profit_estimate": ai_result.get("net_profit_best", 0),
+        "net_profit_estimate": best_buyer["net_profit"] if best_buyer else 0,
         "reasoning": ai_result.get("reasoning_local", ""),
         "price_tip": ai_result.get("price_tip", ""),
         "all_buyers": enriched_buyers,

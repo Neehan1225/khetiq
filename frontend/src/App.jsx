@@ -1452,7 +1452,7 @@ function FarmerPortal({ toast, bg, onBack }) {
       } else if (status === "rejected") {
         await api.patch(`${API}/deals/${dealId}/reject`);
       } else if (status === "bargaining" && counterPrice) {
-        await api.patch(`${API}/deals/${dealId}/counter`, { counter_price: counterPrice });
+        await api.patch(`${API}/deals/${dealId}/counter`, { counter_price_per_kg: counterPrice });
       } else {
         await api.patch(`${API}/deals/${dealId}/status`, { deal_status: status, counter_price_per_kg: counterPrice || null });
       }
@@ -1778,7 +1778,9 @@ function FAnalysis({ rec, onBack, onLockDeal, farmerLang }) {
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ color: "#475569", fontSize: 11, textTransform: "uppercase", letterSpacing: "1px" }}>Net Profit</div>
-              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 44, fontWeight: 900, color: "#4ade80", lineHeight: 1.1 }}>₹{rec.net_profit_estimate.toLocaleString()}</div>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 44, fontWeight: 900, color: "#4ade80", lineHeight: 1.1 }}>
+                ₹{(rec.net_profit_estimate || ((rec.apmc_price_per_kg * rec.quantity_kg) - rec.best_buyer.transport_cost)).toLocaleString()}
+              </div>
             </div>
           </div>
         </Card>
@@ -2450,7 +2452,7 @@ function BuyerPortal({ toast, bg, onBack }) {
 
   const counterOffer = async (dealId, price) => {
     try {
-      await api.patch(`${API}/deals/${dealId}/counter`, { counter_price: price });
+      await api.patch(`${API}/deals/${dealId}/counter`, { counter_price_per_kg: price });
       toast(`Counter-offer of ₹${price}/kg sent!`);
       const r = await api.get(`${API}/deals/buyer/${buyer.id}`).catch(() => ({ data: [] }));
       setDeals(r.data);

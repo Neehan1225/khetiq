@@ -81,7 +81,7 @@ async def update_deal_status(deal_id: uuid.UUID, update: DealStatusUpdate, db: A
 
 
 class CounterOfferRequest(BaseModel):
-    counter_price: float
+    counter_price_per_kg: float
 
 
 @router.patch("/{deal_id}/counter", response_model=DealResponse)
@@ -92,7 +92,7 @@ async def send_counter_offer(deal_id: uuid.UUID, body: CounterOfferRequest, db: 
         raise HTTPException(status_code=404, detail="Deal not found")
     if deal.deal_status in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail=f"Cannot counter a {deal.deal_status} deal")
-    deal.counter_price_per_kg = body.counter_price
+    deal.counter_price_per_kg = body.counter_price_per_kg
     deal.deal_status = "bargaining"
     await db.commit()
     await db.refresh(deal)
