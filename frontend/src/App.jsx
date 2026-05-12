@@ -1464,14 +1464,24 @@ function FarmerPortal({ toast, bg, onBack }) {
 
   const handleReviewSubmit = async (reviewData) => {
     try {
-      await api.post(`${API}/reviews/`, {
-        deal_id: reviewData.dealId, reviewer_type: "farmer", reviewer_id: farmer.id,
-        reviewee_type: "buyer", reviewee_id: reviewData.revieweeId,
-        rating: reviewData.rating, comment: reviewData.comment
-      });
+      const payload = {
+        deal_id: reviewData.dealId,
+        reviewer_type: "farmer",
+        reviewer_id: farmer.id,
+        reviewee_type: "buyer",
+        reviewee_id: reviewData.revieweeId,
+        rating: reviewData.rating,
+        comment: reviewData.comment || null,
+        reason: reviewData.reason || null,
+      };
+      console.log("[Review Submit] Payload:", payload);
+      await api.post(`${API}/reviews/`, payload);
       setReviewModal(null);
-      toast("Review submitted! Thank you.");
-    } catch (e) { toast("Failed to submit review", "error"); }
+      toast(reviewData.isFeedback ? "Feedback submitted! Thank you." : "Review submitted! Thank you.");
+    } catch (e) {
+      console.error("[Review Submit] Error:", e?.response?.data || e.message);
+      toast(e?.response?.data?.detail || "Failed to submit review", "error");
+    }
   };
 
   if (loading) return (
@@ -1870,7 +1880,16 @@ function ProfileCardModal({ type, id, name, onClose }) {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    api.get(`${API}/reviews/${type}/${id}`).then(r => setData(r.data)).catch(() => { });
+    const profileEndpoint = type === "farmer" ? `${API}/farmers/${id}` : `${API}/buyers/${id}`;
+    Promise.all([
+      api.get(`${API}/reviews/${type}/${id}`),
+      api.get(profileEndpoint).catch(() => ({ data: {} })),
+    ]).then(([reviewsRes, profileRes]) => {
+      setData({
+        ...reviewsRes.data,
+        fulfillment_reliability_score: profileRes.data?.fulfillment_reliability_score ?? 100,
+      });
+    }).catch(() => { });
   }, [type, id]);
 
   return (
@@ -2058,13 +2077,23 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
 
   const handleReviewSubmit = async (reviewData) => {
     try {
-      await api.post(`${API}/reviews/`, {
-        deal_id: reviewData.dealId, reviewer_type: "farmer", reviewer_id: farmerId,
-        reviewee_type: "buyer", reviewee_id: reviewData.revieweeId,
-        rating: reviewData.rating, comment: reviewData.comment
-      });
+      const payload = {
+        deal_id: reviewData.dealId,
+        reviewer_type: "farmer",
+        reviewer_id: farmerId,
+        reviewee_type: "buyer",
+        reviewee_id: reviewData.revieweeId,
+        rating: reviewData.rating,
+        comment: reviewData.comment || null,
+        reason: reviewData.reason || null,
+      };
+      console.log("[FDeals Review Submit] Payload:", payload);
+      await api.post(`${API}/reviews/`, payload);
       setReviewModal(null);
-    } catch (e) { alert("Failed to submit review"); }
+    } catch (e) {
+      console.error("[FDeals Review Submit] Error:", e?.response?.data || e.message);
+      alert(e?.response?.data?.detail || "Failed to submit review");
+    }
   };
 
   const displayStatus = (d) => optimistic[d.id] || d.deal_status;
@@ -2390,14 +2419,24 @@ function BuyerPortal({ toast, bg, onBack }) {
 
   const handleReviewSubmit = async (reviewData) => {
     try {
-      await api.post(`${API}/reviews/`, {
-        deal_id: reviewData.dealId, reviewer_type: "buyer", reviewer_id: buyer.id,
-        reviewee_type: "farmer", reviewee_id: reviewData.revieweeId,
-        rating: reviewData.rating, comment: reviewData.comment
-      });
+      const payload = {
+        deal_id: reviewData.dealId,
+        reviewer_type: "buyer",
+        reviewer_id: buyer.id,
+        reviewee_type: "farmer",
+        reviewee_id: reviewData.revieweeId,
+        rating: reviewData.rating,
+        comment: reviewData.comment || null,
+        reason: reviewData.reason || null,
+      };
+      console.log("[Buyer Review Submit] Payload:", payload);
+      await api.post(`${API}/reviews/`, payload);
       setReviewModal(null);
-      toast("Review submitted! Thank you.");
-    } catch (e) { toast("Failed to submit review", "error"); }
+      toast(reviewData.isFeedback ? "Feedback submitted! Thank you." : "Review submitted! Thank you.");
+    } catch (e) {
+      console.error("[Buyer Review Submit] Error:", e?.response?.data || e.message);
+      toast(e?.response?.data?.detail || "Failed to submit review", "error");
+    }
   };
 
   const acceptCounter = async (dealId, counterPrice) => {
@@ -3157,13 +3196,23 @@ function BDeals({ deals, farmers, onBack, onAcceptCounter, onCounterOffer, onRej
 
   const handleReviewSubmit = async (reviewData) => {
     try {
-      await api.post(`${API}/reviews/`, {
-        deal_id: reviewData.dealId, reviewer_type: "buyer", reviewer_id: buyerId,
-        reviewee_type: "farmer", reviewee_id: reviewData.revieweeId,
-        rating: reviewData.rating, comment: reviewData.comment
-      });
+      const payload = {
+        deal_id: reviewData.dealId,
+        reviewer_type: "buyer",
+        reviewer_id: buyerId,
+        reviewee_type: "farmer",
+        reviewee_id: reviewData.revieweeId,
+        rating: reviewData.rating,
+        comment: reviewData.comment || null,
+        reason: reviewData.reason || null,
+      };
+      console.log("[BDeals Review Submit] Payload:", payload);
+      await api.post(`${API}/reviews/`, payload);
       setReviewModal(null);
-    } catch (e) { alert("Failed to submit review"); }
+    } catch (e) {
+      console.error("[BDeals Review Submit] Error:", e?.response?.data || e.message);
+      alert(e?.response?.data?.detail || "Failed to submit review");
+    }
   };
 
 
