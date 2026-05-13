@@ -107,22 +107,66 @@ function formatCopilotComputedProfitSentence(lang, d) {
   return be[lang] || be.en;
 }
 
-function copilotInitialGreetingText(lang, analysisContext) {
+/** Detect rain expected within the next N days from weather_days array. */
+function detectRainInDays(weatherDays, withinDays = 3) {
+  if (!weatherDays?.length) return null;
+  const today = new Date();
+  for (let i = 0; i < weatherDays.length && i < withinDays; i++) {
+    const day = weatherDays[i];
+    if (day.rain_mm > 2) {
+      const dayDate = new Date(day.date + "T00:00:00");
+      const diffMs = dayDate - today;
+      const diffDays = Math.max(1, Math.ceil(diffMs / 86400000));
+      return { daysUntil: diffDays, rain_mm: day.rain_mm };
+    }
+  }
+  return null;
+}
+
+/** Build greeting text + data-driven suggestion chips for the Copilot. Returns { text, suggestions }. */
+function copilotInitialGreeting(lang, analysisContext) {
   const d = deriveCopilotNetProfitFromAnalysis(analysisContext);
   const crop = analysisContext?.crop || "crop";
   const ri = analysisContext?.resilience_index ?? "—";
   const buyer = analysisContext?.best_buyer?.name || "";
-  const profitLine = formatCopilotComputedProfitSentence(lang, d);
-  const common = `\n${profitLine}`;
-  const byLang = {
-    kn: `✅ ನಿಮ್ಮ ${crop} ವಿಶ್ಲೇಷಣೆ ಸಿದ್ಧ! ಸ್ಥಿತಿಸ್ಥಾಪಕತ್ವ: ${ri}/100. ಉತ್ತಮ ಖರೀದಿದಾರ: ${buyer}.` + common,
-    hi: `✅ आपके ${crop} का विश्लेषण तैयार है। लचीलापन सूचकांक: ${ri}/100. सर्वश्रेष्ठ खरीदार: ${buyer}.` + common,
-    te: `✅ మీ ${crop} విశ్లేషణ సిద్ధం। స్థితిస్థాపక సూచిక: ${ri}/100. ఉత్తమ కొనుగోలుదారు: ${buyer}.` + common,
-    ta: `✅ உங்கள் ${crop} பகுப்பாய்வு தயார். உறுதிப்பாட்டுக் குறியீடு: ${ri}/100. சிறந்த வாங்குபவர்: ${buyer}.` + common,
-    mr: `✅ तुमची ${crop} विश्लेषण तयार आहे. स्थितिस्थापकता: ${ri}/100. सर्वोत्तम खरेददार: ${buyer}.` + common,
-    en: `✅ Your ${crop} analysis is loaded. Resilience index: ${ri}/100. Best buyer: ${buyer}.` + common,
-  };
-  return byLang[lang] || byLang.en;
+  const weatherDays = analysisContext?.weather_days;
+  const rain = detectRainInDays(weatherDays, 3);
+
+  // ── Net profit line ──
+  let profitLine;
+  if (!d) {
+    profitLine = "";
+  } else if (d.net < 0) {
+    profitLine = `\n⚠️ Current transport costs exceed crop value (₹${Math.abs(d.net).toLocaleString("en-IN")} loss). Ask me how to improve profitability.`;
+  } else if (d.net === 0) {
+    profitLine = `\nTransport cost equals revenue — break-even. Ask me how to improve margins.`;
+  } else {
+    profitLine = `\n💰 Net profit: ₹${d.net.toLocaleString("en-IN")} (revenue ₹${d.gross.toLocaleString("en-IN")} − transport ₹${d.transport.toLocaleString("en-IN")}).`;
+  }
+
+  // ── Weather rain warning ──
+  let weatherLine = "";
+  if (rain) {
+    weatherLine = `\n⚠️ Rain expected in ${rain.daysUntil} day${rain.daysUntil > 1 ? "s" : ""} (${rain.rain_mm}mm) — ask me about harvest timing.`;
+  }
+
+  const greeting = `✅ Your ${crop} analysis is loaded. Resilience: ${ri}/100. Best buyer: ${buyer}.${profitLine}${weatherLine}`;
+
+  // ── Data-driven suggestion chips ──
+  const suggestions = [];
+  if (d && d.net < 0) {
+    suggestions.push("How can I reduce transport cost?");
+  } else {
+    suggestions.push("Should I sell now?");
+  }
+  if (rain) {
+    suggestions.push("Should I harvest early?");
+  } else {
+    suggestions.push("Best price today?");
+  }
+  suggestions.push("What are my options?");
+
+  return { text: greeting, suggestions };
 }
 const CROPS = ["tomato", "onion", "potato", "brinjal", "cabbage", "cauliflower", "beans", "carrot", "chilli", "garlic", "ginger", "maize", "wheat", "rice", "banana", "mango", "grapes", "pomegranate"];
 const DISTRICTS = ["Belagavi", "Dharwad", "Mysuru", "Bengaluru", "Hubli", "Davanagere", "Tumkur", "Hassan", "Shivamogga", "Mangaluru", "Vijayapura", "Kalaburagi", "Ballari", "Bidar", "Raichur", "Koppal", "Gadag", "Haveri", "Chikkamagaluru", "Mandya", "Udupi", "Kodagu"];
@@ -487,9 +531,23 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
   useEffect(() => {
     setFullContext((fc) => {
       if (!fc) return fc;
+      const a = analysisContext || {};
+      const enriched = enrichAnalysisDataForCopilot(a);
       return {
         ...fc,
-        analysis_data: enrichAnalysisDataForCopilot(analysisContext || {}),
+        analysis_data: {
+          ...enriched,
+          crop_type: a.crop || a.crop_type || null,
+          quantity_kg: a.quantity_kg ?? null,
+          apmc_price_per_kg: a.apmc_price_per_kg ?? a.apmc_price ?? null,
+          resilience_index: a.resilience_index ?? null,
+          risk_level: a.risk_level ?? null,
+          weather_summary: a.weather_summary ?? a.weather?.summary ?? null,
+          best_buyer_name: a.best_buyer?.name ?? null,
+          best_buyer_distance_km: a.best_buyer?.distance_km ?? null,
+          best_buyer_transport_cost: a.best_buyer?.transport_cost ?? null,
+          best_buyer_net_profit: a.best_buyer?.net_profit ?? enriched?.copilot_derived_financials?.computed_net_profit ?? null,
+        },
       };
     });
   }, [analysisContext]);
@@ -529,19 +587,57 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
       const loadContext = async () => {
         setLoadingData(true);
         try {
-          const [dashRes, buyersRes, dealsRes] = await Promise.all([
+          const [dashRes, buyersRes] = await Promise.all([
             api.get(`${API}/analytics/dashboard`),
             api.get(`${API}/buyers/`),
-            userType === "farmer" ? api.get(`${API}/deals/farmer/${userId}`) : api.get(`${API}/deals/buyer/${userId}`)
           ]);
+
+          // ── Build analysis_data from the crop analysis already loaded ──
+          const a = analysisContext || {};
+          const enriched = enrichAnalysisDataForCopilot(a);
+          const analysisBlock = {
+            ...enriched,
+            crop_type: a.crop || a.crop_type || null,
+            quantity_kg: a.quantity_kg ?? null,
+            apmc_price_per_kg: a.apmc_price_per_kg ?? a.apmc_price ?? null,
+            resilience_index: a.resilience_index ?? null,
+            risk_level: a.risk_level ?? null,
+            weather_summary: a.weather_summary ?? a.weather?.summary ?? null,
+            best_buyer_name: a.best_buyer?.name ?? null,
+            best_buyer_distance_km: a.best_buyer?.distance_km ?? null,
+            best_buyer_transport_cost: a.best_buyer?.transport_cost ?? null,
+            best_buyer_net_profit: a.best_buyer?.net_profit ?? enriched?.copilot_derived_financials?.computed_net_profit ?? null,
+          };
+
+          // ── Map all buyers with requested fields ──
+          const allBuyers = buyersRes.data.map(b => ({
+            name: b.name,
+            district: b.district,
+            distance_km: b.distance_km ?? null,
+            rating: b.rating ?? b.fulfillment_reliability_score ?? null,
+            crop_preferences: b.crop_preferences ?? b.type ?? null,
+          }));
+
+          // ── Analytics summary from dashboard ──
+          const dash = dashRes.data;
+          const analyticsSummary = {
+            total_farmers: dash.summary?.total_farmers ?? null,
+            top_crop: dash.intelligence?.most_active_crop ?? null,
+            supply_demand: dash.supply_demand ?? [],
+            fulfillment_rate: dash.summary?.fulfillment_rate ?? null,
+          };
+
           setFullContext({
-            analysis_data: enrichAnalysisDataForCopilot(analysisContext || {}),
-            dashboard_market_intelligence: dashRes.data.intelligence,
-            supply_demand: dashRes.data.supply_demand,
-            fulfillment_rate: dashRes.data.summary.fulfillment_rate,
-            all_buyers: buyersRes.data.map(b => ({ name: b.name, district: b.district, location: { lat: b.location_lat, lng: b.location_lng } })),
-            deal_history: dealsRes.data.map(d => ({ crop: d.crop_type, qty: d.quantity_kg, price: d.agreed_price_per_kg, status: d.deal_status, created_at: d.created_at }))
+            analysis_data: analysisBlock,
+            all_buyers: allBuyers,
+            analytics_summary: analyticsSummary,
           });
+
+          // Set data-driven suggestion chips based on actual analysis
+          if (analysisContext?.best_buyer) {
+            const greetData = copilotInitialGreeting(lang, analysisContext);
+            if (greetData.suggestions?.length) setSugg(greetData.suggestions);
+          }
         } catch (e) {
           console.error("Failed to load full context", e);
           setFullContext({ analysis_data: enrichAnalysisDataForCopilot(analysisContext || {}) });
@@ -551,7 +647,7 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
       };
       loadContext();
     }
-  }, [open, fullContext, analysisContext, userType, userId, loadingData]);
+  }, [open, fullContext, analysisContext, userType, userId, loadingData, lang]);
 
   const send = async (txt) => {
     const t = (txt || inp).trim();
@@ -646,9 +742,9 @@ function CopilotPanel({ userType, userId, lang, analysisContext }) {
           <div style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
             {!msgs.length && <div style={{ textAlign: "left", padding: "14px 12px", color: "#cbd5e1", fontSize: 13, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
               {loadingData
-                ? "Loading market data..."
+                ? "Loading market intelligence..."
                 : isFarmer && analysisContext?.best_buyer
-                  ? copilotInitialGreetingText(lang, analysisContext)
+                  ? copilotInitialGreeting(lang, analysisContext).text
                   : "✅ Real-time data loaded. Ask me anything about prices, buyers, deals, or market trends!"}
             </div>}
             {msgs.map((m, i) => (

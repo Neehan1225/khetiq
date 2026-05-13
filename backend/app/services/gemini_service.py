@@ -145,10 +145,11 @@ _COPILOT_LANGUAGE_INSTRUCTION = (
 )
 
 _COPILOT_USER_QUESTION_WRAPPER_TAIL = (
-    "Answer specifically using the farm data provided. If they ask what to do next — give step by step recommendation "
-    "based on their crops, deals, and market conditions. If they ask about demand — reference actual supply vs demand numbers. "
-    "If they ask about buyers — give specific buyer names, distances, and net profit figures. If they ask about price — "
-    "give exact APMC rate and net profit after transport."
+    "Instructions: Answer specifically using only the real data provided in the system prompt. "
+    "For profit questions give exact rupee amounts. For buyer questions give specific buyer names and distances. "
+    "For harvest timing give specific days. For market questions use actual supply vs demand numbers. "
+    "For next steps give numbered actionable advice. Keep response under 5 sentences. "
+    "Never say 'based on general knowledge' — only use the provided data."
 )
 
 
@@ -162,19 +163,125 @@ def _copilot_user_contents_after_system(task_and_question: str) -> str:
 
 
 def _copilot_system_instruction(full_context: dict) -> str:
-    ctx_json = json.dumps(full_context, ensure_ascii=False)
+    """Build the structured system prompt with real data sections populated from fullContext."""
+    a = full_context.get("analysis_data") or {}
+    buyers = full_context.get("all_buyers") or []
+    mkt = full_context.get("analytics_summary") or {}
+
+    # ── CROP DATA section ──────────────────────────────────────────────
+    crop_type       = a.get("crop_type") or a.get("crop") or "N/A"
+    quantity        = a.get("quantity_kg", "N/A")
+    apmc_price      = a.get("apmc_price_per_kg") or a.get("apmc_price") or "N/A"
+    harvest_date    = a.get("expected_harvest_date") or a.get("harvest_date") or "N/A"
+    resilience      = a.get("resilience_index", "N/A")
+    risk_level      = a.get("risk_level", "N/A")
+
+    crop_section = (
+        f"CROP DATA:\n"
+        f"  Crop type: {crop_type}\n"
+        f"  Quantity: {quantity} kg\n"
+        f"  APMC price: ₹{apmc_price}/kg\n"
+        f"  Harvest date: {harvest_date}\n"
+        f"  Resilience index: {resilience}/100\n"
+        f"  Risk level: {risk_level}"
+    )
+
+    # ── BEST BUYER section ─────────────────────────────────────────────
+    bb_name      = a.get("best_buyer_name", "N/A")
+    bb_district  = a.get("best_buyer?.district") or (a.get("best_buyer") or {}).get("district", "N/A")
+    bb_distance  = a.get("best_buyer_distance_km", "N/A")
+    bb_transport = a.get("best_buyer_transport_cost", "N/A")
+    bb_profit    = a.get("best_buyer_net_profit", "N/A")
+
+    # Also check the nested copilot_derived_financials for authoritative profit
+    financials = a.get("copilot_derived_financials") or {}
+    if financials.get("computed_net_profit") is not None:
+        bb_profit = financials["computed_net_profit"]
+    if financials.get("transport_cost") is not None:
+        bb_transport = financials["transport_cost"]
+
+    best_buyer_section = (
+        f"BEST BUYER:\n"
+        f"  Name: {bb_name}\n"
+        f"  District: {bb_district}\n"
+        f"  Distance: {bb_distance} km\n"
+        f"  Transport cost: ₹{bb_transport}\n"
+        f"  Net profit (after transport): ₹{bb_profit}"
+    )
+
+    # ── ALL BUYERS section ─────────────────────────────────────────────
+    if buyers:
+        buyer_lines = []
+        for b in buyers[:10]:  # cap at 10 to keep prompt size reasonable
+            buyer_lines.append(
+                f"  - {b.get('name','?')} | {b.get('district','?')} | "
+                f"dist: {b.get('distance_km','N/A')} km | "
+                f"rating: {b.get('rating','N/A')} | "
+                f"crops: {b.get('crop_preferences','N/A')}"
+            )
+        all_buyers_section = "ALL BUYERS:\n" + "\n".join(buyer_lines)
+    else:
+        all_buyers_section = "ALL BUYERS: N/A"
+
+    # ── WEATHER section ────────────────────────────────────────────────
+    weather_summary = a.get("weather_summary") or "N/A"
+    weather_section = f"WEATHER:\n  7-day forecast: {weather_summary}"
+
+    # ── MARKET section ─────────────────────────────────────────────────
+    top_crop          = mkt.get("top_crop", "N/A")
+    total_farmers     = mkt.get("total_farmers", "N/A")
+    fulfillment_rate  = mkt.get("fulfillment_rate", "N/A")
+    supply_demand     = mkt.get("supply_demand") or []
+    sd_lines = []
+    for sd in supply_demand[:8]:
+        flag = " ⬆ demand exceeds supply" if sd.get("demand_exceeds") else ""
+        sd_lines.append(
+            f"  - {sd.get('crop','?')}: supply {sd.get('supply','?')} kg, "
+            f"demand {sd.get('demand','?')} kg{flag}"
+        )
+    sd_text = "\n".join(sd_lines) if sd_lines else "  N/A"
+    market_section = (
+        f"MARKET:\n"
+        f"  Top crop (most active): {top_crop}\n"
+        f"  Total farmers on platform: {total_farmers}\n"
+        f"  Deal fulfillment rate: {fulfillment_rate}%\n"
+        f"  Supply vs Demand:\n{sd_text}"
+    )
+
+    # ── Net-profit discipline clause ───────────────────────────────────
+    profit_discipline = (
+        "NET PROFIT DISCIPLINE: "
+        "Always use the exact rupee figures above. "
+        "If copilot_derived_financials is present, its computed_net_profit (= price_per_kg × quantity_kg − transport_cost) "
+        "is the authoritative net profit — do not use stale per-buyer net_profit fields if they disagree. "
+        "If computed_net_profit is negative, state the negative amount and warn that transport exceeds crop value. "
+        "If it equals zero (break-even), say the surplus is fully absorbed by transport — never say ₹0 net profit."
+    )
+
+    language_instruction = (
+        "LANGUAGE RULE: "
+        "Detect the language of the user's message. "
+        "If Hindi respond entirely in Hindi. "
+        "If Kannada respond entirely in Kannada. "
+        "If Telugu respond in Telugu. "
+        "If English respond in English. "
+        "Never mix languages. "
+        "Match the user's language exactly in every response."
+    )
+
     return (
-        "You are KhetIQ, an expert Indian agricultural supply chain advisor helping farmers maximize profit. "
-        f"You have access to real-time farm and market data: {ctx_json}. "
-        "Use this data to answer every question with specific numbers, buyer names, distances, and actionable advice. "
-        "Never give generic responses. Keep answers under 4 sentences but make every sentence count. "
-        "Net profit discipline: Whenever analysis_data.copilot_derived_financials is present, use its "
-        "gross_revenue, transport_cost, and computed_net_profit (formula (price_per_kg × quantity_kg) − transport_cost "
-        "using those numeric fields)—do not trust net_profit_estimate or stale per-buyer net_profit literals if they disagree. "
-        "Never quote a headline net-profit figure as ₹0; if computed_net_profit is negative, state the negative rupee amount "
-        "and prepend the correct-language string from negative_margin_warning_text matching the farmer's script (⚠️ transport exceeds crop value). "
-        "If computed_net_profit equals zero because revenue equals transport (break-even), say surplus is absorbed by transport "
-        "instead of saying ₹0 net profit."
+        "You are KhetIQ, an expert Indian agricultural advisor. "
+        "You only answer based on the following real data — do not guess or hallucinate any numbers:\n\n"
+        f"{crop_section}\n\n"
+        f"{best_buyer_section}\n\n"
+        f"{all_buyers_section}\n\n"
+        f"{weather_section}\n\n"
+        f"{market_section}\n\n"
+        "Only use these exact numbers in your answers. "
+        "If data shows N/A or is not available, say so clearly. "
+        "Never invent prices, distances, or buyer names.\n\n"
+        f"{profit_discipline}\n\n"
+        f"{language_instruction}"
     )
 
 
