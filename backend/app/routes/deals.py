@@ -20,15 +20,17 @@ class DealCreate(BaseModel):
     transport_cost: float = 0.0
     expected_delivery_date: date
     initiated_by: str = "buyer"   # "buyer" or "farmer"
-    deal_status: str = "offer"
+    deal_status: str = "pending"
     proposed_delivery_date: Optional[date] = None
     proposed_time_slot: Optional[str] = None   # morning | afternoon | evening
     delivery_notes: Optional[str] = Field(None, max_length=100)
 
 
 class DealStatusUpdate(BaseModel):
-    deal_status: str             # accepted | rejected | bargaining | locked
+    deal_status: str             # accepted | rejected | counter_offered | bargaining | locked
     counter_price_per_kg: Optional[float] = None
+    counter_quantity_kg: Optional[float] = None
+    counter_by: Optional[str] = None
 
 
 class DealResponse(BaseModel):
@@ -39,6 +41,8 @@ class DealResponse(BaseModel):
     quantity_kg: float
     agreed_price_per_kg: float
     counter_price_per_kg: Optional[float] = None
+    counter_quantity_kg: Optional[float] = None
+    counter_by: Optional[str] = None
     transport_cost: float
     total_value: float
     payment_status: str
@@ -57,6 +61,8 @@ class DealResponse(BaseModel):
 
 @router.post("/", response_model=DealResponse)
 async def create_deal(deal: DealCreate, db: AsyncSession = Depends(get_db)):
+    if deal.deal_status == "offer":
+        deal.deal_status = "pending"
     total_value = deal.quantity_kg * deal.agreed_price_per_kg
     data = deal.model_dump()
     new_deal = Deal(**data, total_value=total_value)
@@ -72,9 +78,16 @@ async def update_deal_status(deal_id: uuid.UUID, update: DealStatusUpdate, db: A
     deal = result.scalar_one_or_none()
     if not deal:
         raise HTTPException(status_code=404, detail="Deal not found")
-    deal.deal_status = update.deal_status
+    status = update.deal_status
+    if status == "bargaining":
+        status = "counter_offered"
+    deal.deal_status = status
     if update.counter_price_per_kg is not None:
         deal.counter_price_per_kg = update.counter_price_per_kg
+    if update.counter_quantity_kg is not None:
+        deal.counter_quantity_kg = update.counter_quantity_kg
+    if update.counter_by is not None:
+        deal.counter_by = update.counter_by
     await db.commit()
     await db.refresh(deal)
     return deal
@@ -82,6 +95,8 @@ async def update_deal_status(deal_id: uuid.UUID, update: DealStatusUpdate, db: A
 
 class CounterOfferRequest(BaseModel):
     counter_price_per_kg: float
+    counter_quantity_kg: Optional[float] = None
+    counter_by: str
 
 
 @router.patch("/{deal_id}/counter", response_model=DealResponse)
@@ -93,7 +108,10 @@ async def send_counter_offer(deal_id: uuid.UUID, body: CounterOfferRequest, db: 
     if deal.deal_status in ("accepted", "rejected"):
         raise HTTPException(status_code=400, detail=f"Cannot counter a {deal.deal_status} deal")
     deal.counter_price_per_kg = body.counter_price_per_kg
-    deal.deal_status = "bargaining"
+    if body.counter_quantity_kg is not None:
+        deal.counter_quantity_kg = body.counter_quantity_kg
+    deal.counter_by = body.counter_by
+    deal.deal_status = "counter_offered"
     await db.commit()
     await db.refresh(deal)
     return deal
@@ -107,9 +125,13 @@ async def accept_deal(deal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Deal not found")
     if deal.deal_status == "rejected":
         raise HTTPException(status_code=400, detail="Cannot accept a rejected deal")
-    if deal.counter_price_per_kg:
+    
+    if deal.counter_price_per_kg is not None:
         deal.agreed_price_per_kg = deal.counter_price_per_kg
-        deal.total_value = deal.quantity_kg * deal.counter_price_per_kg
+    if deal.counter_quantity_kg is not None:
+        deal.quantity_kg = deal.counter_quantity_kg
+        
+    deal.total_value = deal.quantity_kg * deal.agreed_price_per_kg
     deal.deal_status = "accepted"
     
     # Auto-cancel competing offers for the same crop type from this farmer
@@ -118,7 +140,7 @@ async def accept_deal(deal_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         .where(Deal.farmer_id == deal.farmer_id)
         .where(Deal.crop_type == deal.crop_type)
         .where(Deal.id != deal_id)
-        .where(Deal.deal_status.in_(["offer", "bargaining"]))
+        .where(Deal.deal_status.in_(["offer", "pending", "bargaining", "counter_offered"]))
         .values(deal_status="cancelled")
     )
     await db.execute(stmt)
@@ -150,7 +172,7 @@ def _enrich_deal(deal: Deal) -> dict:
     }
     today = datetime.now(timezone.utc).date()
     ref_date = deal.proposed_delivery_date or deal.expected_delivery_date
-    if ref_date and deal.deal_status in ("offer", "accepted", "bargaining") and ref_date < today:
+    if ref_date and deal.deal_status in ("offer", "pending", "accepted", "bargaining", "counter_offered") and ref_date < today:
         d["is_overdue"] = True
         d["overdue_days"] = (today - ref_date).days
     else:

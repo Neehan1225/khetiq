@@ -14,7 +14,9 @@ class Deal(Base):
     crop_type = Column(String(50), nullable=False)
     quantity_kg = Column(Float, nullable=False)
     agreed_price_per_kg = Column(Float, nullable=False)
-    counter_price_per_kg = Column(Float, nullable=True)   # farmer counter-offer price
+    counter_price_per_kg = Column(Float, nullable=True)   # counter-offer price
+    counter_quantity_kg = Column(Float, nullable=True)    # counter-offer quantity
+    counter_by = Column(String(10), nullable=True)         # "buyer" or "farmer"
     transport_cost = Column(Float, default=0.0)
     total_value = Column(Float, default=0.0)
     expected_delivery_date = Column(Date, nullable=True)

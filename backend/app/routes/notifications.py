@@ -33,7 +33,7 @@ async def get_notifications(
         age_h = (now - created).total_seconds() / 3600 if created else 999
 
         # 1. New incoming offer (buyer → farmer)
-        if user_type == "farmer" and d.initiated_by == "buyer" and d.deal_status == "offer" and age_h < 72:
+        if user_type == "farmer" and d.initiated_by == "buyer" and d.deal_status in ("offer", "pending") and age_h < 72:
             notifications.append({
                 "id": f"offer_{d.id}",
                 "type": "new_offer",
@@ -46,7 +46,7 @@ async def get_notifications(
             })
 
         # 2. New incoming offer (farmer → buyer)
-        if user_type == "buyer" and d.initiated_by == "farmer" and d.deal_status == "offer" and age_h < 72:
+        if user_type == "buyer" and d.initiated_by == "farmer" and d.deal_status in ("offer", "pending") and age_h < 72:
             notifications.append({
                 "id": f"offer_{d.id}",
                 "type": "new_offer",
@@ -59,7 +59,7 @@ async def get_notifications(
             })
 
         # 3. Counter-offer received (farmer gets buyer counter)
-        if (d.deal_status == "bargaining" and d.counter_price_per_kg and
+        if (d.deal_status in ("bargaining", "counter_offered") and d.counter_price_per_kg and
                 user_type == "farmer" and d.initiated_by == "buyer" and age_h < 48):
             notifications.append({
                 "id": f"counter_{d.id}",
@@ -73,7 +73,7 @@ async def get_notifications(
             })
 
         # 4. Counter-offer received (buyer gets farmer counter)
-        if (d.deal_status == "bargaining" and d.counter_price_per_kg and
+        if (d.deal_status in ("bargaining", "counter_offered") and d.counter_price_per_kg and
                 user_type == "buyer" and d.initiated_by == "farmer" and age_h < 48):
             notifications.append({
                 "id": f"counter_{d.id}",

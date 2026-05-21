@@ -1382,6 +1382,7 @@ function FarmerPortal({ toast, bg, onBack }) {
   const [profileModal, setProfileModal] = useState(null);
   const [reviewModal, setReviewModal] = useState(null);
   const [highlightDealId, setHighlightDealId] = useState(null);
+  const [lockingDeal, setLockingDeal] = useState(false);
 
   // Silent session restore — runs on mount if navigated here from AppInner auto-redirect
   useEffect(() => {
@@ -1491,11 +1492,13 @@ function FarmerPortal({ toast, bg, onBack }) {
   };
 
   const initiateLockDeal = () => {
-    if (!recommendation?.best_buyer) return;
+    if (!recommendation?.best_buyer || lockingDeal) return;
     setDeliveryModalData(true);
   };
 
   const executeLockDeal = async (details) => {
+    if (lockingDeal) return;
+    setLockingDeal(true);
     try {
       const expectedDate = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
       await api.post(`${API}/deals/`, {
@@ -1519,7 +1522,10 @@ function FarmerPortal({ toast, bg, onBack }) {
         totalValue: recommendation.apmc_price_per_kg * recommendation.quantity_kg,
         expectedPickup: details.proposed_delivery_date,
       });
-    } catch (e) { toast("Failed: " + JSON.stringify(e.response?.data?.detail || e.message), "error"); }
+    } catch (e) {
+      setLockingDeal(false);
+      toast("Failed: " + JSON.stringify(e.response?.data?.detail || e.message), "error");
+    }
   };
 
   const loadDeals = async () => {
@@ -1532,14 +1538,16 @@ function FarmerPortal({ toast, bg, onBack }) {
     } catch { toast("Failed to load deals", "error"); }
   };
 
-  const respondToDeal = async (dealId, status, counterPrice) => {
+  const respondToDeal = async (dealId, status, counterPrice, counterQty) => {
     try {
       if (status === "accepted") {
         await api.patch(`${API}/deals/${dealId}/accept`);
       } else if (status === "rejected") {
         await api.patch(`${API}/deals/${dealId}/reject`);
-      } else if (status === "bargaining" && counterPrice) {
-        await api.patch(`${API}/deals/${dealId}/counter`, { counter_price_per_kg: counterPrice });
+      } else if (status === "counter_offered" && counterPrice) {
+        const body = { counter_price_per_kg: counterPrice, counter_by: "farmer" };
+        if (counterQty) body.counter_quantity_kg = counterQty;
+        await api.patch(`${API}/deals/${dealId}/counter`, body);
       } else {
         await api.patch(`${API}/deals/${dealId}/status`, { deal_status: status, counter_price_per_kg: counterPrice || null });
       }
@@ -1593,6 +1601,7 @@ function FarmerPortal({ toast, bg, onBack }) {
           {farmer && <>
             <button onClick={() => { loadCrops(farmer); setPage("dashboard"); }} style={{ background: "none", border: "none", color: page === "dashboard" ? "#4ade80" : "#64748b", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Dashboard</button>
             <button onClick={loadDeals} style={{ background: "none", border: "none", color: page === "deals" ? "#4ade80" : "#64748b", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>My Deals</button>
+            <button onClick={() => setPage("reviews")} style={{ background: "none", border: "none", color: page === "reviews" ? "#4ade80" : "#64748b", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>★ Reviews</button>
             <div style={{ width: 30, height: 30, borderRadius: "50%", background: "linear-gradient(135deg,#16a34a,#0e7490)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{farmer.name[0]}</div>
             <NotificationBell userType="farmer" userId={farmer.id} onAction={onNotificationAction} />
           </>}
@@ -1607,7 +1616,9 @@ function FarmerPortal({ toast, bg, onBack }) {
           data={dealLockOverlay}
           onDismiss={() => {
             setDealLockOverlay(null);
+            setLockingDeal(false);
             toast("Deal locked! Track it in My Deals.");
+            loadDeals();
           }}
         />
       )}
@@ -1615,13 +1626,188 @@ function FarmerPortal({ toast, bg, onBack }) {
         {page === "login" && <FLogin onLogin={login} onRegister={() => setPage("register")} bg={bg} lang={lang} />}
         {page === "register" && <FRegister onRegister={register} onBack={() => setPage("login")} lang={lang} setLang={setLang} />}
         {page === "dashboard" && farmer && <FDashboard farmer={farmer} crops={crops} onAddCrop={addCrop} onAnalyze={analyze} analyzingId={analyzingId} lang={lang} />}
-        {page === "analysis" && recommendation && <FAnalysis rec={recommendation} onBack={() => setPage("dashboard")} onLockDeal={initiateLockDeal} farmerLang={farmer?.language || "kn"} />}
+        {page === "analysis" && recommendation && <FAnalysis rec={recommendation} onBack={() => setPage("dashboard")} onLockDeal={initiateLockDeal} lockingDeal={lockingDeal} farmerLang={farmer?.language || "kn"} />}
         {page === "deals" && <FDeals deals={deals} buyers={buyers} onBack={() => setPage("dashboard")} onRespond={respondToDeal} farmerId={farmer.id} onReviewOpen={setReviewModal} highlightDealId={highlightDealId} />}
+        {page === "reviews" && farmer && <FMyReviews farmerId={farmer.id} farmerName={farmer.name} onBack={() => setPage("dashboard")} />}
       </div>
       {profileModal && <ProfileCardModal type={profileModal.type} id={profileModal.id} name={profileModal.name} onClose={() => setProfileModal(null)} />}
       {reviewModal && <ReviewModal data={reviewModal} onClose={() => setReviewModal(null)} onSubmit={handleReviewSubmit} />}
       {farmer && <CopilotPanel userType="farmer" userId={farmer.id} lang={lang} analysisContext={recommendation} />}
       {deliveryModalData && <ConfirmDeliveryModal onSubmit={executeLockDeal} onClose={() => setDeliveryModalData(null)} lang={lang} />}
+    </div>
+  );
+}
+
+function FMyReviews({ farmerId, farmerName, onBack }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("all"); // all | verified | feedback
+
+  useEffect(() => {
+    setLoading(true);
+    api.get(`${API}/reviews/dashboard/farmer/${farmerId}`)
+      .then(r => setData(r.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [farmerId]);
+
+  if (loading) return (
+    <div style={{ textAlign: "center", padding: 80 }}>
+      <Spinner size={36} color="#4ade80" />
+      <div style={{ marginTop: 16, color: "#64748b", fontSize: 14 }}>Loading reviews…</div>
+    </div>
+  );
+
+  if (!data) return (
+    <div style={{ textAlign: "center", padding: 80, color: "#475569" }}>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>← Dashboard</button>
+      Failed to load reviews.
+    </div>
+  );
+
+  const { average_rating, review_count, verified_count, feedback_count, star_breakdown, reliability_score, completed_deals, failed_deals, total_attempted_deals, reviews } = data;
+  const maxStarCount = Math.max(...Object.values(star_breakdown), 1);
+
+  const filteredReviews = tab === "all" ? reviews : reviews.filter(r => r.review_type === tab);
+
+  const reliabilityColor = reliability_score >= 80 ? "#4ade80" : reliability_score >= 50 ? "#fbbf24" : "#f87171";
+  const reliabilityLabel = reliability_score >= 80 ? "Excellent" : reliability_score >= 50 ? "Average" : "Needs Improvement";
+
+  const reasonLabels = { price_disagreement: "Price Disagreement", quality_concern: "Quality Concern", communication_issue: "Communication Issue", other: "Other" };
+
+  const formatDate = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 14, marginBottom: 24, display: "flex", alignItems: "center", gap: 6 }}>← Dashboard</button>
+      <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 30, fontWeight: 900, marginBottom: 8 }}>My Reviews & Ratings</div>
+      <div style={{ color: "#64748b", fontSize: 14, marginBottom: 32 }}>See what buyers are saying about you, {farmerName}.</div>
+
+      {/* Top Summary Row */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, marginBottom: 32 }}>
+        {/* Overall Rating Card */}
+        <Card style={{ position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
+          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 48, fontWeight: 900, background: "linear-gradient(135deg,#fbbf24,#f59e0b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{average_rating}</div>
+              <div style={{ color: "#fbbf24", fontSize: 20, letterSpacing: 2 }}>
+                {"★".repeat(Math.round(average_rating))}{"☆".repeat(5 - Math.round(average_rating))}
+              </div>
+              <div style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>{review_count} review{review_count !== 1 ? "s" : ""}</div>
+            </div>
+            {/* Star Breakdown Bars */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+              {[5, 4, 3, 2, 1].map(star => (
+                <div key={star} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                  <span style={{ color: "#94a3b8", width: 14, textAlign: "right" }}>{star}</span>
+                  <span style={{ color: "#fbbf24", fontSize: 11 }}>★</span>
+                  <div style={{ flex: 1, height: 6, background: "rgba(255,255,255,0.06)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(star_breakdown[star] / maxStarCount) * 100}%`, background: star >= 4 ? "#4ade80" : star === 3 ? "#fbbf24" : "#f87171", borderRadius: 3, transition: "width 0.8s ease" }} />
+                  </div>
+                  <span style={{ color: "#64748b", width: 20, textAlign: "right", fontSize: 11 }}>{star_breakdown[star]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+            <div style={{ flex: 1, background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.15)", borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: "#4ade80" }}>{verified_count}</div>
+              <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>Verified</div>
+            </div>
+            <div style={{ flex: 1, background: "rgba(251,191,36,0.06)", border: "1px solid rgba(251,191,36,0.15)", borderRadius: 10, padding: "8px 12px", textAlign: "center" }}>
+              <div style={{ fontWeight: 800, fontSize: 18, color: "#fbbf24" }}>{feedback_count}</div>
+              <div style={{ fontSize: 10, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.5px" }}>Feedback</div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Reliability Score Card */}
+        <Card style={{ position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${reliabilityColor},${reliabilityColor}88)` }} />
+          <div style={{ color: "#64748b", fontSize: 10, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 12, fontWeight: 700 }}>Fulfillment Reliability</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14 }}>
+            <div style={{ position: "relative", width: 80, height: 80 }}>
+              <svg width="80" height="80" viewBox="0 0 80 80" style={{ transform: "rotate(-90deg)" }}>
+                <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="8" />
+                <circle cx="40" cy="40" r="34" fill="none" stroke={reliabilityColor} strokeWidth="8"
+                  strokeDasharray={`${(reliability_score / 100) * 213.6} 213.6`}
+                  strokeLinecap="round"
+                  style={{ transition: "stroke-dasharray 1s ease" }} />
+              </svg>
+              <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, color: reliabilityColor }}>{reliability_score}%</div>
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: reliabilityColor, marginBottom: 4 }}>{reliabilityLabel}</div>
+              <div style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
+                {completed_deals} completed · {failed_deals} failed<br />
+                out of {total_attempted_deals} attempted deal{total_attempted_deals !== 1 ? "s" : ""}
+              </div>
+            </div>
+          </div>
+          <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "10px 14px" }}>
+            <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+              <strong style={{ color: "#94a3b8" }}>How it's calculated:</strong> Your reliability score = (completed deals ÷ total attempted deals) × 100. Attempted deals include accepted, locked, completed, and failed deals. A higher score builds buyer trust.
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* Tab Filter */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {[["all", `All (${review_count})`], ["verified", `Verified (${verified_count})`], ["feedback", `Feedback (${feedback_count})`]].map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            style={{ padding: "8px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", border: tab === key ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,255,255,0.08)", background: tab === key ? "rgba(74,222,128,0.1)" : "rgba(255,255,255,0.03)", color: tab === key ? "#4ade80" : "#64748b", transition: "all 0.2s" }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Review Cards */}
+      {filteredReviews.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: "#475569", border: "1px dashed rgba(255,255,255,0.07)", borderRadius: 16 }}>
+          No {tab === "all" ? "" : tab} reviews yet. As you complete more deals, buyers will leave reviews here.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 14 }}>
+          {filteredReviews.map(r => (
+            <Card key={r.id} style={{ position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: r.review_type === "verified" ? "linear-gradient(90deg,#4ade80,#22d3ee)" : "linear-gradient(90deg,#fbbf24,#f59e0b)" }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", background: r.review_type === "verified" ? "linear-gradient(135deg,#16a34a,#0891b2)" : "linear-gradient(135deg,#d97706,#ea580c)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13, color: "#fff", flexShrink: 0 }}>{r.reviewer_name[0]}</div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 15 }}>{r.reviewer_name}</div>
+                      <div style={{ color: "#64748b", fontSize: 11 }}>{formatDate(r.created_at)}</div>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ color: "#fbbf24", fontSize: 16, letterSpacing: 1 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
+                  <Badge color={r.review_type === "verified" ? "#4ade80" : "#fbbf24"} style={{ fontSize: 9 }}>{r.review_type === "verified" ? "VERIFIED" : "FEEDBACK"}</Badge>
+                </div>
+              </div>
+              {r.comment && (
+                <div style={{ color: "#cbd5e1", fontSize: 14, lineHeight: 1.6, padding: "8px 0 4px 0", borderTop: "1px solid rgba(255,255,255,0.04)" }}>"{r.comment}"</div>
+              )}
+              {r.review_type === "feedback" && r.reason && (
+                <div style={{ marginTop: 10, background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.12)", borderRadius: 10, padding: "10px 14px" }}>
+                  <div style={{ fontSize: 10, color: "#fbbf24", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.5px", marginBottom: 4 }}>Transaction Feedback</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <Badge color="#fbbf24" style={{ fontSize: 10 }}>{reasonLabels[r.reason] || r.reason}</Badge>
+                    {r.comment && <span style={{ color: "#94a3b8", fontSize: 12 }}>— see comment above</span>}
+                  </div>
+                </div>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1815,7 +2001,7 @@ function FDashboard({ farmer, crops, onAddCrop, onAnalyze, analyzingId, lang }) 
   );
 }
 
-function FAnalysis({ rec, onBack, onLockDeal, farmerLang }) {
+function FAnalysis({ rec, onBack, onLockDeal, lockingDeal, farmerLang }) {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
@@ -1824,7 +2010,7 @@ function FAnalysis({ rec, onBack, onLockDeal, farmerLang }) {
           <div style={{ fontFamily: "'Syne',sans-serif", fontSize: 30, fontWeight: 900, letterSpacing: "-1px" }}>AI Analysis</div>
           <div style={{ color: "#475569", fontSize: 14, marginTop: 4, textTransform: "capitalize" }}>{rec.crop} • {rec.quantity_kg}kg • {rec.farmer}</div>
         </div>
-        <Btn onClick={onLockDeal}>Lock Deal with Best Buyer</Btn>
+        <Btn onClick={onLockDeal} disabled={lockingDeal}>{lockingDeal ? <><Spinner /> Locking Deal…</> : "Lock Deal with Best Buyer"}</Btn>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <Card accent={riColor(rec.resilience_index)}>
@@ -2064,17 +2250,17 @@ function NegotiationTimeline({ deal }) {
   const isFinal = ["accepted", "rejected", "locked", "completed", "failed", "cancelled"].includes(deal.deal_status);
   const steps = [
     { label: "Original Offer", status: "done", price: deal.agreed_price_per_kg },
-    { label: "Counter Offer", status: deal.counter_price_per_kg ? "done" : isFinal ? "skip" : deal.deal_status === "offer" ? "pending" : "skip", price: deal.counter_price_per_kg },
+    { label: "Counter Offer", status: deal.counter_price_per_kg ? "done" : isFinal ? "skip" : deal.deal_status === "pending" ? "pending" : "skip", price: deal.counter_price_per_kg },
     { label: "Final Status", status: isFinal ? "done" : "pending" },
   ];
   const statusLabel = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "ACCEPTED" : 
                     deal.deal_status === "rejected" ? "REJECTED" : 
                     deal.deal_status === "failed" ? "FAILED" : 
                     deal.deal_status === "cancelled" ? "CANCELLED" : 
-                    deal.deal_status === "bargaining" ? "NEGOTIATING" : "PENDING";
+                    deal.deal_status === "counter_offered" ? "NEGOTIATING" : "PENDING";
   const statusClr = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "#4ade80" : 
                    (deal.deal_status === "rejected" || deal.deal_status === "failed") ? "#f87171" : 
-                   deal.deal_status === "bargaining" ? "#fbbf24" : "#64748b";
+                   deal.deal_status === "counter_offered" ? "#fbbf24" : "#64748b";
 
   return (
     <div style={{ marginBottom: 18 }}>
@@ -2187,16 +2373,17 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
 
   const displayStatus = (d) => optimistic[d.id] || d.deal_status;
 
-  const handleRespond = (dealId, status, counterPrice) => {
+  const handleRespond = (dealId, status, counterPrice, counterQty) => {
     setOptimistic(p => ({ ...p, [dealId]: status }));
-    onRespond(dealId, status, counterPrice);
+    onRespond(dealId, status, counterPrice, counterQty);
     setShowCounter(p => ({ ...p, [dealId]: false }));
   };
 
-  const incomingOffers = deals.filter(d => d.initiated_by === "buyer" && ["offer", "bargaining"].includes(d.deal_status));
-  const myOffers = deals.filter(d => d.initiated_by === "farmer" && d.deal_status === "offer");
+  // pending = fresh offer; counter_offered where farmer is the counter-offerer = ball in buyer's court
+  const incomingOffers = deals.filter(d => d.initiated_by === "buyer" && ["pending", "counter_offered"].includes(d.deal_status));
+  const myOffers = deals.filter(d => d.initiated_by === "farmer" && d.deal_status === "pending");
   const closedDeals = deals.filter(d => ["accepted", "rejected", "locked", "cancelled", "failed", "completed"].includes(d.deal_status));
-  const negotiating = deals.filter(d => d.deal_status === "bargaining" && d.initiated_by === "farmer");
+  const negotiating = deals.filter(d => d.deal_status === "counter_offered" && d.counter_by === "farmer");
 
   const DealCard = ({ d, showActions }) => {
     const buyerName = buyers?.find(b => b.id === d.buyer_id)?.name || "Buyer";
@@ -2204,13 +2391,13 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
     const ds = displayStatus(d);
     const isOptimistic = !!optimistic[d.id];
     const isLate = d.is_overdue || ((ds === "accepted" || ds === "locked") && d.expected_delivery_date && new Date(d.expected_delivery_date) < new Date());
-    const effectiveStatus = ds === "failed" ? "FAILED" : ds === "cancelled" ? "CANCELLED" : ds === "completed" ? "COMPLETED" : isLate ? "LATE" : (ds === "accepted" || ds === "locked") ? "PENDING" : ds === "rejected" ? "REJECTED" : ds === "bargaining" ? "NEGOTIATING" : "PENDING";
-    const statusColor = effectiveStatus === "COMPLETED" ? "#4ade80" : (effectiveStatus === "LATE" || effectiveStatus === "FAILED" || ds === "rejected") ? "#fbbf24" : effectiveStatus === "CANCELLED" ? "#64748b" : effectiveStatus === "PENDING" ? "#fbbf24" : ds === "bargaining" ? "#fbbf24" : "#64748b";
+    const effectiveStatus = ds === "failed" ? "FAILED" : ds === "cancelled" ? "CANCELLED" : ds === "completed" ? "COMPLETED" : isLate ? "LATE" : (ds === "accepted" || ds === "locked") ? "PENDING" : ds === "rejected" ? "REJECTED" : ds === "counter_offered" ? "NEGOTIATING" : "PENDING";
+    const statusColor = effectiveStatus === "COMPLETED" ? "#4ade80" : (effectiveStatus === "LATE" || effectiveStatus === "FAILED" || ds === "rejected") ? "#fbbf24" : effectiveStatus === "CANCELLED" ? "#64748b" : effectiveStatus === "PENDING" ? "#fbbf24" : ds === "counter_offered" ? "#fbbf24" : "#64748b";
 
     const topGrad = effectiveStatus === "COMPLETED" ? "linear-gradient(90deg,#16a34a,#15803d)" :
       (effectiveStatus === "LATE" || effectiveStatus === "FAILED" || ds === "rejected") ? "linear-gradient(90deg,#dc2626,#991b1b)" :
         effectiveStatus === "CANCELLED" ? "linear-gradient(90deg,#475569,#1e293b)" :
-          (ds === "accepted" || ds === "locked" || ds === "bargaining") ? "linear-gradient(90deg,#d97706,#b45309)" :
+          (ds === "accepted" || ds === "locked" || ds === "counter_offered") ? "linear-gradient(90deg,#d97706,#b45309)" :
             "linear-gradient(90deg,#1d4ed8,#4338ca)";
 
     return (
@@ -2251,27 +2438,77 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
               </div>
             </div>
 
-            {showActions && ds === "offer" && (
+            {/* Farmer sees fresh buyer offer (pending) - can Accept, Counter, or Reject */}
+            {showActions && ds === "pending" && (
               <div>
                 {showCounter[d.id] ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <input type="number" placeholder="Your price ₹/kg"
-                      value={counterInputs[d.id] || ""}
-                      onChange={e => setCounterInputs(prev => ({ ...prev, [d.id]: e.target.value }))}
-                      style={{ flex: 1, minWidth: 120, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(251,146,60,0.4)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
-                    <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: false }))} style={{ padding: "10px 14px" }}>Cancel</Btn>
-                    <Btn variant="blue" onClick={() => handleRespond(d.id, "bargaining", parseFloat(counterInputs[d.id]))} style={{ padding: "10px 14px" }}>Send Counter</Btn>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input type="number" placeholder="Counter price ₹/kg"
+                        value={counterInputs[d.id + "_price"] || ""}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_price"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 130, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(251,146,60,0.4)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                      <input type="number" placeholder="Counter qty (kg) — optional"
+                        value={counterInputs[d.id + "_qty"] || ""}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_qty"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 150, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(251,146,60,0.25)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: false }))} style={{ padding: "10px 14px" }}>Cancel</Btn>
+                      <Btn variant="blue" disabled={!counterInputs[d.id + "_price"] || optimistic[d.id] === "counter_offered"}
+                        onClick={() => handleRespond(d.id, "counter_offered", parseFloat(counterInputs[d.id + "_price"]), parseFloat(counterInputs[d.id + "_qty"]) || null)}
+                        style={{ padding: "10px 14px" }}>
+                        {optimistic[d.id] === "counter_offered" ? "Sending…" : "Send Counter"}
+                      </Btn>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Btn variant="green" onClick={() => handleRespond(d.id, "accepted", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✓ Accept Offer</Btn>
+                    <Btn variant="green" disabled={!!optimistic[d.id]} onClick={() => handleRespond(d.id, "accepted", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✓ Accept Offer</Btn>
                     <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: true }))} style={{ padding: "9px 20px", fontSize: 13, color: "#fb923c", border: "1px solid rgba(251,146,60,0.35)" }}>⇄ Counter-Offer</Btn>
-                    <Btn variant="red" onClick={() => handleRespond(d.id, "rejected", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
+                    <Btn variant="red" disabled={!!optimistic[d.id]} onClick={() => handleRespond(d.id, "rejected", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
                   </div>
                 )}
               </div>
             )}
 
+            {/* Farmer sees buyer's counter-offer (counter_offered by buyer) - can Accept, Counter again, or Reject */}
+            {showActions && ds === "counter_offered" && d.counter_by === "buyer" && d.counter_price_per_kg && (
+              <div>
+                <div style={{ background: "rgba(251,146,60,0.07)", border: "1px solid rgba(251,146,60,0.2)", borderRadius: 10, padding: "10px 14px", marginBottom: 10, fontSize: 13 }}>
+                  Buyer proposes: <strong style={{ color: "#fb923c" }}>₹{d.counter_price_per_kg}/kg</strong>
+                  {d.counter_quantity_kg && <span style={{ color: "#94a3b8" }}> · {d.counter_quantity_kg} kg</span>}
+                </div>
+                {showCounter[d.id] ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input type="number" placeholder="Your counter price ₹/kg"
+                        value={counterInputs[d.id + "_price"] || ""}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_price"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 130, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(251,146,60,0.4)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                      <input type="number" placeholder="Counter qty (kg) — optional"
+                        value={counterInputs[d.id + "_qty"] || ""}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_qty"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 150, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(251,146,60,0.25)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: false }))} style={{ padding: "10px 14px" }}>Cancel</Btn>
+                      <Btn variant="blue" disabled={!counterInputs[d.id + "_price"] || optimistic[d.id] === "counter_offered"}
+                        onClick={() => handleRespond(d.id, "counter_offered", parseFloat(counterInputs[d.id + "_price"]), parseFloat(counterInputs[d.id + "_qty"]) || null)}
+                        style={{ padding: "10px 14px" }}>
+                        {optimistic[d.id] === "counter_offered" ? "Sending…" : "Counter Again"}
+                      </Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn variant="green" disabled={!!optimistic[d.id]} onClick={() => handleRespond(d.id, "accepted", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✓ Accept ₹{d.counter_price_per_kg}/kg</Btn>
+                    <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: true }))} style={{ padding: "9px 20px", fontSize: 13, color: "#fb923c", border: "1px solid rgba(251,146,60,0.35)" }}>⇄ Counter Again</Btn>
+                    <Btn variant="red" disabled={!!optimistic[d.id]} onClick={() => handleRespond(d.id, "rejected", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
+                  </div>
+                )}
+              </div>
+            )}
 
             {(ds === "accepted" || ds === "locked" || ds === "completed" || ds === "failed") && (
               <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2306,14 +2543,6 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
             {ds === "cancelled" && (
               <div style={{ marginTop: 16, padding: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8, color: "#94a3b8", fontSize: 13, textAlign: "center" }}>
                 This offer is no longer available because you accepted another offer for this crop.
-              </div>
-            )}
-
-            {/* Farmer sees counter from buyer-initiated bargaining */}
-            {showActions && ds === "bargaining" && d.counter_price_per_kg && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn variant="green" onClick={() => handleRespond(d.id, "accepted", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✓ Accept ₹{d.counter_price_per_kg}/kg</Btn>
-                <Btn variant="red" onClick={() => handleRespond(d.id, "rejected", null)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
               </div>
             )}
           </div>
@@ -2479,7 +2708,7 @@ function BuyerPortal({ toast, bg, onBack }) {
         proposed_delivery_date: date,
         proposed_time_slot: slot,
         delivery_notes: notes,
-        initiated_by: "buyer", deal_status: "offer"
+        initiated_by: "buyer", deal_status: "pending"
       });
       toast(`Offer sent to ${farmer.name}! ₹${pricePerKg}/kg for ${qty}kg`);
       setOfferModal(null);
@@ -2527,9 +2756,11 @@ function BuyerPortal({ toast, bg, onBack }) {
     } catch { toast("Failed to accept deal", "error"); }
   };
 
-  const counterOffer = async (dealId, price) => {
+  const counterOffer = async (dealId, price, qty) => {
     try {
-      await api.patch(`${API}/deals/${dealId}/counter`, { counter_price_per_kg: price });
+      const body = { counter_price_per_kg: price, counter_by: "buyer" };
+      if (qty) body.counter_quantity_kg = qty;
+      await api.patch(`${API}/deals/${dealId}/counter`, body);
       toast(`Counter-offer of ₹${price}/kg sent!`);
       const r = await api.get(`${API}/deals/buyer/${buyer.id}`).catch(() => ({ data: [] }));
       setDeals(r.data);
@@ -3295,24 +3526,27 @@ function BDeals({ deals, farmers, onBack, onAcceptCounter, onCounterOffer, onRej
   };
 
 
-  const statusColor = (s) => s === "accepted" ? "#4ade80" : s === "rejected" ? "#f87171" : s === "bargaining" ? "#fb923c" : s === "locked" ? "#4ade80" : "#64748b";
+  const statusColor = (s) => s === "accepted" ? "#4ade80" : s === "rejected" ? "#f87171" : s === "counter_offered" ? "#fb923c" : s === "locked" ? "#4ade80" : "#64748b";
   const displayStatus = (d) => optimistic[d.id] || d.deal_status;
-  const statusLabel = (s) => s === "accepted" || s === "locked" ? "ACCEPTED" : s === "rejected" ? "REJECTED" : s === "bargaining" ? "NEGOTIATING" : "PENDING";
+  const statusLabel = (s) => s === "accepted" || s === "locked" ? "ACCEPTED" : s === "rejected" ? "REJECTED" : s === "counter_offered" ? "NEGOTIATING" : "PENDING";
 
-  const pending = deals.filter(d => d.deal_status === "offer" || d.deal_status === "bargaining");
-  const closed = deals.filter(d => !["offer", "bargaining"].includes(d.deal_status));
+  const pending = deals.filter(d => d.deal_status === "pending" || d.deal_status === "offer" || d.deal_status === "counter_offered");
+  const closed = deals.filter(d => !["pending", "offer", "counter_offered"].includes(d.deal_status));
 
-  const handleAccept = (dealId, counterPrice) => {
+  const handleAccept = async (dealId) => {
+    if (optimistic[dealId]) return;
     setOptimistic(p => ({ ...p, [dealId]: "accepted" }));
-    onAcceptCounter(dealId, counterPrice);
+    await onAcceptCounter(dealId);
   };
-  const handleReject = (dealId) => {
+  const handleReject = async (dealId) => {
+    if (optimistic[dealId]) return;
     setOptimistic(p => ({ ...p, [dealId]: "rejected" }));
-    if (onRejectDeal) onRejectDeal(dealId);
+    if (onRejectDeal) await onRejectDeal(dealId);
   };
-  const handleCounter = (dealId, price) => {
-    setOptimistic(p => ({ ...p, [dealId]: "bargaining" }));
-    if (onCounterOffer) onCounterOffer(dealId, price);
+  const handleCounter = async (dealId, price, qty) => {
+    if (optimistic[dealId]) return;
+    setOptimistic(p => ({ ...p, [dealId]: "counter_offered" }));
+    if (onCounterOffer) await onCounterOffer(dealId, price, qty);
     setShowCounter(p => ({ ...p, [dealId]: false }));
   };
 
@@ -3329,13 +3563,13 @@ function BDeals({ deals, farmers, onBack, onAcceptCounter, onCounterOffer, onRej
     const ds = displayStatus(d);
     const isOptimistic = !!optimistic[d.id];
     const isLate = d.is_overdue || ((ds === "accepted" || ds === "locked") && d.expected_delivery_date && new Date(d.expected_delivery_date) < new Date());
-    const effectiveStatus = ds === "failed" ? "FAILED" : ds === "cancelled" ? "CANCELLED" : ds === "completed" ? "COMPLETED" : isLate ? "LATE" : (ds === "accepted" || ds === "locked") ? "PENDING" : ds === "rejected" ? "REJECTED" : ds === "bargaining" ? "NEGOTIATING" : "PENDING";
-    const statusColor = effectiveStatus === "COMPLETED" ? "#4ade80" : (effectiveStatus === "LATE" || effectiveStatus === "FAILED" || ds === "rejected") ? "#fbbf24" : effectiveStatus === "CANCELLED" ? "#64748b" : effectiveStatus === "PENDING" ? "#fbbf24" : ds === "bargaining" ? "#fbbf24" : "#64748b";
+    const effectiveStatus = ds === "failed" ? "FAILED" : ds === "cancelled" ? "CANCELLED" : ds === "completed" ? "COMPLETED" : isLate ? "LATE" : (ds === "accepted" || ds === "locked") ? "PENDING" : ds === "rejected" ? "REJECTED" : ds === "counter_offered" ? "NEGOTIATING" : "PENDING";
+    const statusColor = effectiveStatus === "COMPLETED" ? "#4ade80" : (effectiveStatus === "LATE" || effectiveStatus === "FAILED" || ds === "rejected") ? "#fbbf24" : effectiveStatus === "CANCELLED" ? "#64748b" : effectiveStatus === "PENDING" ? "#fbbf24" : ds === "counter_offered" ? "#fbbf24" : "#64748b";
 
     const topGrad = effectiveStatus === "COMPLETED" ? "linear-gradient(90deg,#16a34a,#15803d)" :
       (effectiveStatus === "LATE" || effectiveStatus === "FAILED" || ds === "rejected") ? "linear-gradient(90deg,#dc2626,#991b1b)" :
         effectiveStatus === "CANCELLED" ? "linear-gradient(90deg,#475569,#1e293b)" :
-          (ds === "accepted" || ds === "locked" || ds === "bargaining") ? "linear-gradient(90deg,#d97706,#ea580c)" :
+          (ds === "accepted" || ds === "locked" || ds === "counter_offered") ? "linear-gradient(90deg,#d97706,#ea580c)" :
             "linear-gradient(90deg,#1d4ed8,#4338ca)";
 
     return (
@@ -3411,33 +3645,78 @@ function BDeals({ deals, farmers, onBack, onAcceptCounter, onCounterOffer, onRej
               </div>
             )}
             {/* Buyer: accept farmer's counter-offer */}
-            {ds === "bargaining" && d.counter_price_per_kg && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <Btn variant="green" onClick={() => handleAccept(d.id, d.counter_price_per_kg)} style={{ padding: "9px 20px", fontSize: 13 }}>
-                  ✓ Accept ₹{d.counter_price_per_kg}/kg
-                </Btn>
-                <Btn variant="red" onClick={() => handleReject(d.id)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
-              </div>
-            )}
-
-            {/* Buyer: send counter-offer on pending deals */}
-            {ds === "offer" && (
+            {ds === "counter_offered" && d.counter_by === "farmer" && d.counter_price_per_kg && (
               <div>
+                <div style={{ background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.18)", borderRadius: 10, padding: "10px 14px", marginBottom: 10, fontSize: 13 }}>
+                  Farmer proposes: <strong style={{ color: "#4ade80" }}>₹{d.counter_price_per_kg}/kg</strong>
+                  {d.counter_quantity_kg && <span style={{ color: "#94a3b8" }}> · {d.counter_quantity_kg} kg</span>}
+                </div>
                 {showCounter[d.id] ? (
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <input type="number" placeholder="Your counter ₹/kg"
-                      value={counterInputs[d.id] || ""}
-                      onClick={e => e.stopPropagation()}
-                      onChange={e => setCounterInputs(prev => ({ ...prev, [d.id]: e.target.value }))}
-                      style={{ flex: 1, minWidth: 120, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(56,189,248,0.4)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
-                    <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: false }))} style={{ padding: "10px 14px" }}>Cancel</Btn>
-                    <Btn variant="blue" onClick={() => handleCounter(d.id, parseFloat(counterInputs[d.id]))} style={{ padding: "10px 14px" }}>Send Counter</Btn>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input type="number" placeholder="Your counter price ₹/kg"
+                        value={counterInputs[d.id + "_price"] || ""}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_price"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 130, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(56,189,248,0.4)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                      <input type="number" placeholder="Counter qty (kg) — optional"
+                        value={counterInputs[d.id + "_qty"] || ""}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_qty"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 150, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(56,189,248,0.2)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: false }))} style={{ padding: "10px 14px" }}>Cancel</Btn>
+                      <Btn variant="blue" disabled={!counterInputs[d.id + "_price"] || optimistic[d.id] === "counter_offered"}
+                        onClick={() => handleCounter(d.id, parseFloat(counterInputs[d.id + "_price"]), parseFloat(counterInputs[d.id + "_qty"]) || null)}
+                        style={{ padding: "10px 14px" }}>
+                        {optimistic[d.id] === "counter_offered" ? "Sending…" : "Counter Again"}
+                      </Btn>
+                    </div>
                   </div>
                 ) : (
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Btn variant="green" onClick={() => handleAccept(d.id, d.agreed_price_per_kg)} style={{ padding: "9px 20px", fontSize: 13 }}>✓ Accept Offer</Btn>
+                    <Btn variant="green" disabled={!!optimistic[d.id]} onClick={() => handleAccept(d.id)} style={{ padding: "9px 20px", fontSize: 13 }}>
+                      ✓ Accept ₹{d.counter_price_per_kg}/kg
+                    </Btn>
+                    <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: true }))} style={{ padding: "9px 20px", fontSize: 13, color: "#38bdf8", border: "1px solid rgba(56,189,248,0.35)" }}>⇄ Counter Again</Btn>
+                    <Btn variant="red" disabled={!!optimistic[d.id]} onClick={() => handleReject(d.id)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Buyer: send counter-offer on pending/fresh-offer deals */}
+            {(ds === "pending" || ds === "offer") && (
+              <div>
+                {showCounter[d.id] ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <input type="number" placeholder="Your counter price ₹/kg"
+                        value={counterInputs[d.id + "_price"] || ""}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_price"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 130, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(56,189,248,0.4)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                      <input type="number" placeholder="Counter qty (kg) — optional"
+                        value={counterInputs[d.id + "_qty"] || ""}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setCounterInputs(prev => ({ ...prev, [d.id + "_qty"]: e.target.value }))}
+                        style={{ flex: 1, minWidth: 150, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(56,189,248,0.2)", color: "#e2e8f0", padding: "10px 14px", borderRadius: 10, fontSize: 14, outline: "none" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: false }))} style={{ padding: "10px 14px" }}>Cancel</Btn>
+                      <Btn variant="blue" disabled={!counterInputs[d.id + "_price"] || optimistic[d.id] === "counter_offered"}
+                        onClick={() => handleCounter(d.id, parseFloat(counterInputs[d.id + "_price"]), parseFloat(counterInputs[d.id + "_qty"]) || null)}
+                        style={{ padding: "10px 14px" }}>
+                        {optimistic[d.id] === "counter_offered" ? "Sending…" : "Send Counter"}
+                      </Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Btn variant="green" disabled={!!optimistic[d.id]} onClick={() => handleAccept(d.id)} style={{ padding: "9px 20px", fontSize: 13 }}>✓ Accept Offer</Btn>
                     <Btn variant="ghost" onClick={() => setShowCounter(p => ({ ...p, [d.id]: true }))} style={{ padding: "9px 20px", fontSize: 13, color: "#38bdf8", border: "1px solid rgba(56,189,248,0.35)" }}>⇄ Counter-Offer</Btn>
-                    <Btn variant="red" onClick={() => handleReject(d.id)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
+                    <Btn variant="red" disabled={!!optimistic[d.id]} onClick={() => handleReject(d.id)} style={{ padding: "9px 20px", fontSize: 13 }}>✗ Reject</Btn>
                   </div>
                 )}
               </div>
