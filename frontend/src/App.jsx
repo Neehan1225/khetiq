@@ -940,7 +940,7 @@ function Landing({ onSelect }) {
         {/* Feature Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 24, marginBottom: 64 }}>
           {[
-            { icon: "🧠", title: "AI Harvest Intelligence", sub: "Weather-aware crop analysis powered by Gemini AI", detail: "Tells you exactly when to harvest based on rain forecasts and market timing.", color: "#4ade80" },
+            { icon: "🧠", title: "AI Harvest Intelligence@@@@", sub: "Weather-aware crop analysis powered by Gemini AI", detail: "Tells you exactly when to harvest based on rain forecasts and market timing.", color: "#4ade80" },
             { icon: "📍", title: "GPS Buyer Matching", sub: "Find the best buyer near you, net profit calculated", detail: "Calculates real net profit after transport cost, not just gross mandi price.", color: "#38bdf8" },
             { icon: "🤝", title: "Fair Deal Negotiation", sub: "Bargain, lock, and track every deal transparently.", detail: "Counter-offer, accept, reject — full bargaining with deal history timeline.", color: "#818cf8" }
           ].map((f, i) => (
