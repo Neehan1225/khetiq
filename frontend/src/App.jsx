@@ -258,37 +258,37 @@ function useVoice() {
   const listen = useCallback((speechCode, onResult) => {
     console.log("useVoice: Starting recognition with code:", speechCode);
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { 
+    if (!SR) {
       console.error("useVoice: SpeechRecognition not supported in this browser.");
-      alert("Voice input requires Chrome browser."); 
-      return; 
+      alert("Voice input requires Chrome browser.");
+      return;
     }
-    
-    if (ref.current) { 
-      try { ref.current.abort(); console.log("useVoice: Aborted previous instance"); } catch(e) {} 
+
+    if (ref.current) {
+      try { ref.current.abort(); console.log("useVoice: Aborted previous instance"); } catch (e) { }
     }
-    
+
     const r = new SR();
-    r.lang = speechCode; 
-    r.continuous = false; 
+    r.lang = speechCode;
+    r.continuous = false;
     r.interimResults = false;
-    
+
     r.onstart = () => {
       console.log("useVoice: Recognition started");
       setListening(true);
     };
-    
-    r.onresult = (e) => { 
+
+    r.onresult = (e) => {
       const transcript = e.results[0][0].transcript;
       console.log("useVoice: Result received:", transcript);
-      onResult(transcript); 
+      onResult(transcript);
     };
-    
+
     r.onend = () => {
       console.log("useVoice: Recognition ended");
       setListening(false);
     };
-    
+
     r.onerror = (e) => {
       console.error("useVoice: SpeechRecognition error:", e.error, e.message);
       setListening(false);
@@ -301,22 +301,22 @@ function useVoice() {
         console.warn("useVoice: No speech detected");
       }
     };
-    
+
     ref.current = r;
-    try { 
-      r.start(); 
-    } catch(e) { 
-      console.error("useVoice: Fatal start error:", e); 
-      setListening(false); 
+    try {
+      r.start();
+    } catch (e) {
+      console.error("useVoice: Fatal start error:", e);
+      setListening(false);
     }
   }, []);
-  
-  const stop = () => { 
+
+  const stop = () => {
     console.log("useVoice: Manual stop requested");
-    if (ref.current) { try { ref.current.stop(); } catch(e) {} } 
-    setListening(false); 
+    if (ref.current) { try { ref.current.stop(); } catch (e) { } }
+    setListening(false);
   };
-  
+
   return { listening, listen, stop };
 }
 
@@ -332,12 +332,12 @@ function Toast({ t }) {
   if (!t) return null;
   return <div style={{ position: "fixed", top: 20, right: 20, zIndex: 9999, background: t.type === "error" ? "rgba(120,20,20,0.97)" : "rgba(15,70,35,0.97)", border: `1px solid ${t.type === "error" ? "#ef4444" : "#22c55e"}`, color: "#fff", padding: "14px 22px", borderRadius: 12, fontSize: 14, fontWeight: 500, backdropFilter: "blur(24px)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)", maxWidth: 360, lineHeight: 1.5 }}>{t.type === "error" ? "⚠ " : "✓ "}{t.msg}</div>;
 }
-function Spinner({ size = 16, color = "#fff" }) { 
-  return <span className="spin" style={{ 
-    display: "inline-block", width: size, height: size, 
-    border: `2px solid rgba(255,255,255,0.2)`, 
-    borderTopColor: color, borderRadius: "50%" 
-  }} />; 
+function Spinner({ size = 16, color = "#fff" }) {
+  return <span className="spin" style={{
+    display: "inline-block", width: size, height: size,
+    border: `2px solid rgba(255,255,255,0.2)`,
+    borderTopColor: color, borderRadius: "50%"
+  }} />;
 }
 function Badge({ color = "#94a3b8", children }) { return <span style={{ background: color + "18", border: `1px solid ${color}35`, color, padding: "3px 11px", borderRadius: 20, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{children}</span>; }
 function LockedBadge() { return <span style={{ background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.4)", color: "#4ade80", padding: "4px 14px", borderRadius: 20, fontSize: 12, fontWeight: 800, letterSpacing: "1.2px", whiteSpace: "nowrap", textTransform: "uppercase", boxShadow: "0 0 12px rgba(34,197,94,0.15)", display: "inline-flex", alignItems: "center", gap: 5 }}>🔒 LOCKED</span>; }
@@ -940,7 +940,7 @@ function Landing({ onSelect }) {
         {/* Feature Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 24, marginBottom: 64 }}>
           {[
-            { icon: "🧠", title: "AI Harvest Intelligence", sub: "Weather-aware crop analysis powered by Gemini AI", detail: "Tells you exactly when to harvest based on rain forecasts and market timing.", color: "#4ade80" },
+            { icon: "🧠", title: "AI Harvest Intelligence@@@@", sub: "Weather-aware crop analysis powered by Gemini AI", detail: "Tells you exactly when to harvest based on rain forecasts and market timing.", color: "#4ade80" },
             { icon: "📍", title: "GPS Buyer Matching", sub: "Find the best buyer near you, net profit calculated", detail: "Calculates real net profit after transport cost, not just gross mandi price.", color: "#38bdf8" },
             { icon: "🤝", title: "Fair Deal Negotiation", sub: "Bargain, lock, and track every deal transparently.", detail: "Counter-offer, accept, reject — full bargaining with deal history timeline.", color: "#818cf8" }
           ].map((f, i) => (
@@ -2187,9 +2187,9 @@ function ProfileCardModal({ type, id, name, onClose }) {
                     <span style={{ fontWeight: 800, color: data.fulfillment_reliability_score >= 70 ? "#4ade80" : data.fulfillment_reliability_score >= 40 ? "#fbbf24" : "#f87171" }}>{data.fulfillment_reliability_score}%</span>
                   </div>
                   <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3, overflow: "hidden" }}>
-                    <div style={{ 
-                      height: "100%", 
-                      width: `${data.fulfillment_reliability_score}%`, 
+                    <div style={{
+                      height: "100%",
+                      width: `${data.fulfillment_reliability_score}%`,
                       background: data.fulfillment_reliability_score >= 70 ? "#4ade80" : data.fulfillment_reliability_score >= 40 ? "#fbbf24" : "#f87171",
                       transition: "width 1s ease"
                     }} />
@@ -2206,36 +2206,36 @@ function ProfileCardModal({ type, id, name, onClose }) {
             <div style={{ color: "#4ade80", fontSize: 11, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80" }} /> Verified Reviews
             </div>
-            {data.recent_reviews.filter(r => r.review_type === "verified" || !r.review_type).length === 0 ? 
+            {data.recent_reviews.filter(r => r.review_type === "verified" || !r.review_type).length === 0 ?
               <div style={{ color: "#475569", fontSize: 13, marginBottom: 20 }}>No verified reviews yet.</div> : (
-              <div style={{ display: "grid", gap: 10, marginBottom: 20 }}>
-                {data.recent_reviews.filter(r => r.review_type === "verified" || !r.review_type).map(r => (
-                  <div key={r.id} style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.1)", padding: 12, borderRadius: 12 }}>
-                    <div style={{ color: "#fbbf24", fontSize: 13, marginBottom: 4 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
-                    {r.comment && <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.4 }}>{r.comment}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
+                <div style={{ display: "grid", gap: 10, marginBottom: 20 }}>
+                  {data.recent_reviews.filter(r => r.review_type === "verified" || !r.review_type).map(r => (
+                    <div key={r.id} style={{ background: "rgba(74,222,128,0.04)", border: "1px solid rgba(74,222,128,0.1)", padding: 12, borderRadius: 12 }}>
+                      <div style={{ color: "#fbbf24", fontSize: 13, marginBottom: 4 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
+                      {r.comment && <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.4 }}>{r.comment}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
 
             {/* Transaction Feedback Section */}
             <div style={{ color: "#fbbf24", fontSize: 11, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#fbbf24" }} /> Transaction Feedback
             </div>
-            {data.recent_reviews.filter(r => r.review_type === "feedback").length === 0 ? 
+            {data.recent_reviews.filter(r => r.review_type === "feedback").length === 0 ?
               <div style={{ color: "#475569", fontSize: 13 }}>No transaction feedback.</div> : (
-              <div style={{ display: "grid", gap: 10 }}>
-                {data.recent_reviews.filter(r => r.review_type === "feedback").map(r => (
-                  <div key={r.id} style={{ background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.1)", padding: 12, borderRadius: 12 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                      <div style={{ color: "#fbbf24", fontSize: 13 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
-                      {r.reason && <Badge color="#fbbf24" style={{ fontSize: 9 }}>{r.reason.replace("_", " ")}</Badge>}
+                <div style={{ display: "grid", gap: 10 }}>
+                  {data.recent_reviews.filter(r => r.review_type === "feedback").map(r => (
+                    <div key={r.id} style={{ background: "rgba(251,191,36,0.04)", border: "1px solid rgba(251,191,36,0.1)", padding: 12, borderRadius: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <div style={{ color: "#fbbf24", fontSize: 13 }}>{"★".repeat(r.rating)}{"☆".repeat(5 - r.rating)}</div>
+                        {r.reason && <Badge color="#fbbf24" style={{ fontSize: 9 }}>{r.reason.replace("_", " ")}</Badge>}
+                      </div>
+                      {r.comment && <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.4 }}>{r.comment}</div>}
                     </div>
-                    {r.comment && <div style={{ fontSize: 13, color: "#cbd5e1", lineHeight: 1.4 }}>{r.comment}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
           </div>
         )}
       </div>
@@ -2253,14 +2253,14 @@ function NegotiationTimeline({ deal }) {
     { label: "Counter Offer", status: deal.counter_price_per_kg ? "done" : isFinal ? "skip" : deal.deal_status === "pending" ? "pending" : "skip", price: deal.counter_price_per_kg },
     { label: "Final Status", status: isFinal ? "done" : "pending" },
   ];
-  const statusLabel = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "ACCEPTED" : 
-                    deal.deal_status === "rejected" ? "REJECTED" : 
-                    deal.deal_status === "failed" ? "FAILED" : 
-                    deal.deal_status === "cancelled" ? "CANCELLED" : 
-                    deal.deal_status === "counter_offered" ? "NEGOTIATING" : "PENDING";
-  const statusClr = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "#4ade80" : 
-                   (deal.deal_status === "rejected" || deal.deal_status === "failed") ? "#f87171" : 
-                   deal.deal_status === "counter_offered" ? "#fbbf24" : "#64748b";
+  const statusLabel = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "ACCEPTED" :
+    deal.deal_status === "rejected" ? "REJECTED" :
+      deal.deal_status === "failed" ? "FAILED" :
+        deal.deal_status === "cancelled" ? "CANCELLED" :
+          deal.deal_status === "counter_offered" ? "NEGOTIATING" : "PENDING";
+  const statusClr = (deal.deal_status === "accepted" || deal.deal_status === "locked" || deal.deal_status === "completed") ? "#4ade80" :
+    (deal.deal_status === "rejected" || deal.deal_status === "failed") ? "#f87171" :
+      deal.deal_status === "counter_offered" ? "#fbbf24" : "#64748b";
 
   return (
     <div style={{ marginBottom: 18 }}>
@@ -2525,21 +2525,21 @@ function FDeals({ deals, buyers, onBack, onRespond, farmerId, onProfileOpen, onR
                   </>
                 )}
                 {(ds === "completed" || ds === "failed" || ds === "rejected" || isLate) && (
-                  <Btn variant={(ds === "rejected" || isLate || ds === "failed") ? "amber" : "ghost"} 
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      onReviewOpen({ 
-                        dealId: d.id, 
-                        revieweeId: d.buyer_id, 
-                        isFeedback: (ds === "rejected" || isLate || ds === "failed") 
-                      }); 
+                  <Btn variant={(ds === "rejected" || isLate || ds === "failed") ? "amber" : "ghost"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReviewOpen({
+                        dealId: d.id,
+                        revieweeId: d.buyer_id,
+                        isFeedback: (ds === "rejected" || isLate || ds === "failed")
+                      });
                     }}>
                     {(ds === "rejected" || isLate || ds === "failed") ? "Leave Feedback" : "Leave Review"}
                   </Btn>
                 )}
               </div>
             )}
-            
+
             {ds === "cancelled" && (
               <div style={{ marginTop: 16, padding: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8, color: "#94a3b8", fontSize: 13, textAlign: "center" }}>
                 This offer is no longer available because you accepted another offer for this crop.
@@ -2874,7 +2874,7 @@ function OfferModal({ crop, farmer, buyer, onConfirm, onClose, lang }) {
               <div style={{ color: "#475569", fontSize: 11, marginTop: 4 }}>Avail: {crop.quantity_kg} kg</div>
             </div>
           </div>
-          
+
           <div>
             <Label>Proposed Delivery Date</Label>
             <input type="date" required min={minDate} max={maxDate} value={date} onChange={e => setDate(e.target.value)} style={{ width: "100%", padding: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, color: "#fff", colorScheme: "dark" }} />
@@ -3355,10 +3355,10 @@ function AnalyticsDashboard() {
                 tickFormatter={v => v.charAt(0).toUpperCase() + v.slice(1)} />
               <YAxis tick={{ fill: "#e2e8f0", fontSize: 11 }} axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
                 tickLine={false} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-              <Tooltip 
-                contentStyle={{ backgroundColor: '#ffffff', border: '1.5px solid #d0d0d0', borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }} 
-                labelStyle={{ color: '#111111', fontWeight: 'bold', fontSize: '15px' }} 
-                itemStyle={{ color: '#333333', fontSize: '13px' }} 
+              <Tooltip
+                contentStyle={{ backgroundColor: '#ffffff', border: '1.5px solid #d0d0d0', borderRadius: '6px', boxShadow: '0 2px 8px rgba(0,0,0,0.12)' }}
+                labelStyle={{ color: '#111111', fontWeight: 'bold', fontSize: '15px' }}
+                itemStyle={{ color: '#333333', fontSize: '13px' }}
                 cursor={{ fill: "rgba(255,255,255,0.03)" }}
                 formatter={(val, name) => [`${val.toLocaleString()} kg`, name === "supply" ? "Supply (listed)" : "Demand (offers)"]}
                 labelFormatter={v => v.charAt(0).toUpperCase() + v.slice(1)} />
@@ -3624,21 +3624,21 @@ function BDeals({ deals, farmers, onBack, onAcceptCounter, onCounterOffer, onRej
                   </>
                 )}
                 {(ds === "completed" || ds === "failed" || ds === "rejected" || isLate) && (
-                  <Btn variant={(ds === "rejected" || isLate || ds === "failed") ? "amber" : "ghost"} 
-                    onClick={(e) => { 
-                      e.stopPropagation(); 
-                      onReviewOpen({ 
-                        dealId: d.id, 
-                        revieweeId: d.farmer_id, 
-                        isFeedback: (ds === "rejected" || isLate || ds === "failed") 
-                      }); 
+                  <Btn variant={(ds === "rejected" || isLate || ds === "failed") ? "amber" : "ghost"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onReviewOpen({
+                        dealId: d.id,
+                        revieweeId: d.farmer_id,
+                        isFeedback: (ds === "rejected" || isLate || ds === "failed")
+                      });
                     }}>
                     {(ds === "rejected" || isLate || ds === "failed") ? "Leave Feedback" : "Leave Review"}
                   </Btn>
                 )}
               </div>
             )}
-            
+
             {ds === "cancelled" && (
               <div style={{ marginTop: 16, padding: 12, background: "rgba(255,255,255,0.05)", borderRadius: 8, color: "#94a3b8", fontSize: 13, textAlign: "center" }}>
                 This offer is no longer available.
